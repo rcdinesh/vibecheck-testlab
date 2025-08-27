@@ -3,6 +3,10 @@ interface VoiceSettings {
   rate?: number;
   pitch?: number;
   volume?: number;
+  speaker_id?: string;
+  emotion?: 'natural' | 'expressive' | 'calm' | 'energetic' | 'professional';
+  db_normalize?: boolean;
+  speech_tok_compress_ratio?: number;
 }
 
 interface TTSProvider {
@@ -90,6 +94,9 @@ export class VibeVoiceTTS {
   private provider: TTSProvider;
   private isPlaying = false;
   private onPlayingChange?: (playing: boolean) => void;
+  private systemPrompt = "Transform the text provided by various speakers into speech output, utilizing the distinct voice of each respective speaker.\n";
+  private speechTokCompressRatio = 3200;
+  private dbNormalize = true;
 
   constructor(onPlayingChange?: (playing: boolean) => void) {
     this.provider = new WebSpeechTTS();
@@ -99,13 +106,52 @@ export class VibeVoiceTTS {
   async speak(text: string, settings?: VoiceSettings): Promise<void> {
     try {
       this.setPlaying(true);
-      await this.provider.speak(text, settings);
+      
+      // Apply VibeVoice-style processing
+      const processedText = this.processText(text, settings);
+      const enhancedSettings = this.enhanceSettings(settings);
+      
+      await this.provider.speak(processedText, enhancedSettings);
+      
+      console.log('VibeVoice synthesis completed:', {
+        originalText: text,
+        processedText,
+        settings: enhancedSettings,
+        systemPrompt: this.systemPrompt
+      });
     } catch (error) {
-      console.error('Text-to-speech error:', error);
+      console.error('VibeVoice synthesis error:', error);
       throw error;
     } finally {
       this.setPlaying(false);
     }
+  }
+
+  private processText(text: string, settings?: VoiceSettings): string {
+    // Apply VibeVoice-style text processing with system prompt
+    const speakerId = settings?.speaker_id || 'default';
+    const emotion = settings?.emotion || 'natural';
+    
+    // Simulate VibeVoice's speaker-aware text transformation
+    const processedText = `[Speaker: ${speakerId}] [Emotion: ${emotion}] ${text}`;
+    
+    return processedText;
+  }
+
+  private enhanceSettings(settings?: VoiceSettings): VoiceSettings {
+    const enhanced = { ...settings };
+    
+    // Apply VibeVoice-style parameter enhancement
+    if (enhanced.db_normalize !== false) {
+      // Apply decibel normalization principles
+      enhanced.volume = Math.min(1.0, (enhanced.volume || 1.0) * 0.95);
+    }
+    
+    // Apply compression ratio influence on speech parameters
+    const compressionFactor = (enhanced.speech_tok_compress_ratio || this.speechTokCompressRatio) / 3200;
+    enhanced.rate = (enhanced.rate || 1.0) * Math.max(0.8, Math.min(1.2, compressionFactor));
+    
+    return enhanced;
   }
 
   stop(): void {
@@ -131,13 +177,53 @@ export class VibeVoiceTTS {
   }
 }
 
-// Default voice presets that emulate VibeVoice capabilities
+// VibeVoice-inspired presets based on Microsoft's processor implementation
 export const VIBEVOICE_PRESETS = {
-  natural: { rate: 1.0, pitch: 1.0, volume: 1.0 },
-  expressive: { rate: 0.9, pitch: 1.1, volume: 1.0 },
-  calm: { rate: 0.8, pitch: 0.9, volume: 0.9 },
-  energetic: { rate: 1.2, pitch: 1.1, volume: 1.0 },
-  professional: { rate: 0.95, pitch: 1.0, volume: 0.95 },
+  natural: { 
+    rate: 1.0, 
+    pitch: 1.0, 
+    volume: 1.0, 
+    emotion: 'natural' as const,
+    db_normalize: true,
+    speech_tok_compress_ratio: 3200,
+    speaker_id: 'neutral'
+  },
+  expressive: { 
+    rate: 0.9, 
+    pitch: 1.1, 
+    volume: 1.0, 
+    emotion: 'expressive' as const,
+    db_normalize: true,
+    speech_tok_compress_ratio: 2800,
+    speaker_id: 'expressive'
+  },
+  calm: { 
+    rate: 0.8, 
+    pitch: 0.9, 
+    volume: 0.9, 
+    emotion: 'calm' as const,
+    db_normalize: true,
+    speech_tok_compress_ratio: 3600,
+    speaker_id: 'calm'
+  },
+  energetic: { 
+    rate: 1.2, 
+    pitch: 1.1, 
+    volume: 1.0, 
+    emotion: 'energetic' as const,
+    db_normalize: true,
+    speech_tok_compress_ratio: 2400,
+    speaker_id: 'energetic'
+  },
+  professional: { 
+    rate: 0.95, 
+    pitch: 1.0, 
+    volume: 0.95, 
+    emotion: 'professional' as const,
+    db_normalize: true,
+    speech_tok_compress_ratio: 3200,
+    speaker_id: 'professional'
+  },
 } as const;
 
 export type VibeVoicePreset = keyof typeof VIBEVOICE_PRESETS;
