@@ -45,23 +45,23 @@ serve(async (req) => {
 
     const azureEmotion = azureEmotions[emotion] || 'neutral';
 
-    // Create SSML with VibeVoice-style processing
-    const processedText = speaker_id && speaker_id !== 'default' 
-      ? `Speaking as ${speaker_id}: ${text}` 
-      : text;
+    // Convert rate/pitch to Azure format
+    const ratePercent = Math.round((rate - 1) * 100);
+    const pitchPercent = Math.round((pitch - 1) * 100);
+    const rateStr = ratePercent >= 0 ? `+${ratePercent}%` : `${ratePercent}%`;
+    const pitchStr = pitchPercent >= 0 ? `+${pitchPercent}%` : `${pitchPercent}%`;
 
+    // Create SSML with proper namespace and formatting
     const ssml = `
-      <speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="en-US">
+      <speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xmlns:mstts="https://www.w3.org/2001/mstts" xml:lang="en-US">
         <voice name="${voice}">
           <mstts:express-as style="${azureEmotion}">
-            <prosody rate="${rate > 1.2 ? '+20%' : rate < 0.8 ? '-20%' : '0%'}" 
-                     pitch="${pitch > 1.1 ? '+10%' : pitch < 0.9 ? '-10%' : '0%'}" 
-                     volume="${volume * 100}%">
-              ${processedText}
+            <prosody rate="${rateStr}" pitch="${pitchStr}" volume="${Math.round(volume * 100)}%">
+              ${text}
             </prosody>
           </mstts:express-as>
         </voice>
-      </speak>`;
+      </speak>`.trim();
 
     console.log('Generated SSML:', ssml);
 
