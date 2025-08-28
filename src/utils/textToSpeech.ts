@@ -12,81 +12,102 @@ interface VoiceSettings {
 interface TTSProvider {
   speak(text: string, settings?: VoiceSettings): Promise<void>;
   stop(): void;
-  getVoices(): Promise<SpeechSynthesisVoice[]>;
+  getVoices(): Promise<any[]>;
   isSupported(): boolean;
 }
 
-class WebSpeechTTS implements TTSProvider {
-  private utterance: SpeechSynthesisUtterance | null = null;
-  private voices: SpeechSynthesisVoice[] = [];
-
-  constructor() {
-    this.loadVoices();
-  }
-
-  private loadVoices() {
-    const loadVoicesWhenReady = () => {
-      this.voices = speechSynthesis.getVoices();
-      if (this.voices.length === 0) {
-        setTimeout(loadVoicesWhenReady, 100);
-      }
-    };
-    loadVoicesWhenReady();
-
-    if (speechSynthesis.onvoiceschanged !== undefined) {
-      speechSynthesis.onvoiceschanged = loadVoicesWhenReady;
-    }
-  }
+class AzureSpeechTTS implements TTSProvider {
+  private currentAudio: HTMLAudioElement | null = null;
+  private supabaseUrl = 'https://dhunaihggondbpiiqqmx.supabase.co';
 
   async speak(text: string, settings: VoiceSettings = {}): Promise<void> {
-    return new Promise((resolve, reject) => {
-      if (!this.isSupported()) {
-        reject(new Error('Speech synthesis not supported'));
-        return;
-      }
+    return new Promise(async (resolve, reject) => {
+      try {
+        this.stop(); // Stop any ongoing speech
 
-      this.stop(); // Stop any ongoing speech
+        const response = await fetch(`${this.supabaseUrl}/functions/v1/azure-tts`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            text,
+            voice: settings.voice || 'en-US-AriaNeural',
+            rate: settings.rate ?? 1.0,
+            pitch: settings.pitch ?? 1.0,
+            volume: settings.volume ?? 1.0,
+            emotion: settings.emotion || 'natural',
+            speaker_id: settings.speaker_id
+          })
+        });
 
-      this.utterance = new SpeechSynthesisUtterance(text);
-      
-      // Set voice
-      if (settings.voice) {
-        const voice = this.voices.find(v => v.name.includes(settings.voice!));
-        if (voice) {
-          this.utterance.voice = voice;
+        if (!response.ok) {
+          throw new Error(`Azure TTS request failed: ${response.status}`);
         }
+
+        const data = await response.json();
+        
+        if (data.error) {
+          throw new Error(data.error);
+        }
+
+        // Convert base64 to blob and play
+        const audioBlob = this.base64ToBlob(data.audio, 'audio/mp3');
+        const audioUrl = URL.createObjectURL(audioBlob);
+        
+        this.currentAudio = new Audio(audioUrl);
+        this.currentAudio.onended = () => {
+          URL.revokeObjectURL(audioUrl);
+          resolve();
+        };
+        this.currentAudio.onerror = () => {
+          URL.revokeObjectURL(audioUrl);
+          reject(new Error('Audio playback failed'));
+        };
+
+        await this.currentAudio.play();
+      } catch (error) {
+        reject(error);
       }
-
-      // Set voice parameters
-      this.utterance.rate = settings.rate ?? 1.0;
-      this.utterance.pitch = settings.pitch ?? 1.0;
-      this.utterance.volume = settings.volume ?? 1.0;
-
-      this.utterance.onend = () => resolve();
-      this.utterance.onerror = (event) => reject(new Error(event.error));
-
-      speechSynthesis.speak(this.utterance);
     });
   }
 
+  private base64ToBlob(base64: string, mimeType: string): Blob {
+    const byteCharacters = atob(base64);
+    const byteNumbers = new Array(byteCharacters.length);
+    for (let i = 0; i < byteCharacters.length; i++) {
+      byteNumbers[i] = byteCharacters.charCodeAt(i);
+    }
+    const byteArray = new Uint8Array(byteNumbers);
+    return new Blob([byteArray], { type: mimeType });
+  }
+
   stop(): void {
-    if (speechSynthesis.speaking) {
-      speechSynthesis.cancel();
+    if (this.currentAudio) {
+      this.currentAudio.pause();
+      this.currentAudio.currentTime = 0;
+      this.currentAudio = null;
     }
   }
 
-  async getVoices(): Promise<SpeechSynthesisVoice[]> {
-    // Wait for voices to load if they haven't yet
-    let retries = 10;
-    while (this.voices.length === 0 && retries > 0) {
-      await new Promise(resolve => setTimeout(resolve, 100));
-      retries--;
-    }
-    return this.voices;
+  async getVoices(): Promise<any[]> {
+    // Return popular Azure voices
+    return [
+      { name: 'en-US-AriaNeural', lang: 'en-US', displayName: 'Aria (US English)' },
+      { name: 'en-US-JennyNeural', lang: 'en-US', displayName: 'Jenny (US English)' },
+      { name: 'en-US-GuyNeural', lang: 'en-US', displayName: 'Guy (US English)' },
+      { name: 'en-US-DavisNeural', lang: 'en-US', displayName: 'Davis (US English)' },
+      { name: 'en-US-AmberNeural', lang: 'en-US', displayName: 'Amber (US English)' },
+      { name: 'en-GB-SoniaNeural', lang: 'en-GB', displayName: 'Sonia (UK English)' },
+      { name: 'en-GB-RyanNeural', lang: 'en-GB', displayName: 'Ryan (UK English)' },
+      { name: 'fr-FR-DeniseNeural', lang: 'fr-FR', displayName: 'Denise (French)' },
+      { name: 'de-DE-KatjaNeural', lang: 'de-DE', displayName: 'Katja (German)' },
+      { name: 'es-ES-ElviraNeural', lang: 'es-ES', displayName: 'Elvira (Spanish)' }
+    ];
   }
 
   isSupported(): boolean {
-    return 'speechSynthesis' in window;
+    return true; // Azure TTS works in all modern browsers
   }
 }
 
@@ -99,7 +120,7 @@ export class VibeVoiceTTS {
   private dbNormalize = true;
 
   constructor(onPlayingChange?: (playing: boolean) => void) {
-    this.provider = new WebSpeechTTS();
+    this.provider = new AzureSpeechTTS();
     this.onPlayingChange = onPlayingChange;
   }
 
