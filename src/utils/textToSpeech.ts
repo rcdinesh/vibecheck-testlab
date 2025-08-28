@@ -32,7 +32,7 @@ class AzureSpeechTTS implements TTSProvider {
           },
           body: JSON.stringify({
             text,
-            voice: settings.voice || 'en-US-AriaNeural',
+            voice: settings.voice || 'en-US-AvaMultilingualNeural',
             rate: settings.rate ?? 1.0,
             pitch: settings.pitch ?? 1.0,
             volume: settings.volume ?? 1.0,
@@ -91,8 +91,9 @@ class AzureSpeechTTS implements TTSProvider {
   }
 
   async getVoices(): Promise<any[]> {
-    // Return comprehensive Microsoft Azure neural voices
+    // Return Microsoft Azure neural voices with Ava Multilingual as primary option
     return [
+      { name: 'en-US-AvaMultilingualNeural', lang: 'en-US', displayName: 'Ava Multilingual (Female, US)' },
       { name: 'en-US-AriaNeural', lang: 'en-US', displayName: 'Aria (Female, US)' },
       { name: 'en-US-JennyNeural', lang: 'en-US', displayName: 'Jenny (Female, US)' },
       { name: 'en-US-GuyNeural', lang: 'en-US', displayName: 'Guy (Male, US)' },
