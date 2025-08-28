@@ -94,26 +94,7 @@ class AzureSpeechTTS implements TTSProvider {
     // Return Microsoft Azure neural voices with Ava Multilingual as primary option
     return [
       { name: 'en-US-AvaMultilingualNeural', lang: 'en-US', displayName: 'Ava Multilingual (Female, US)' },
-      { name: 'en-US-AriaNeural', lang: 'en-US', displayName: 'Aria (Female, US)' },
-      { name: 'en-US-JennyNeural', lang: 'en-US', displayName: 'Jenny (Female, US)' },
-      { name: 'en-US-GuyNeural', lang: 'en-US', displayName: 'Guy (Male, US)' },
-      { name: 'en-US-DavisNeural', lang: 'en-US', displayName: 'Davis (Male, US)' },
-      { name: 'en-US-AmberNeural', lang: 'en-US', displayName: 'Amber (Female, US)' },
-      { name: 'en-US-AnaNeural', lang: 'en-US', displayName: 'Ana (Female, US)' },
-      { name: 'en-US-BrandonNeural', lang: 'en-US', displayName: 'Brandon (Male, US)' },
-      { name: 'en-US-ChristopherNeural', lang: 'en-US', displayName: 'Christopher (Male, US)' },
-      { name: 'en-US-CoraNeural', lang: 'en-US', displayName: 'Cora (Female, US)' },
-      { name: 'en-US-ElizabethNeural', lang: 'en-US', displayName: 'Elizabeth (Female, US)' },
-      { name: 'en-US-EricNeural', lang: 'en-US', displayName: 'Eric (Male, US)' },
-      { name: 'en-US-JacobNeural', lang: 'en-US', displayName: 'Jacob (Male, US)' },
-      { name: 'en-US-JaneNeural', lang: 'en-US', displayName: 'Jane (Female, US)' },
-      { name: 'en-US-JasonNeural', lang: 'en-US', displayName: 'Jason (Male, US)' },
-      { name: 'en-US-MichelleNeural', lang: 'en-US', displayName: 'Michelle (Female, US)' },
-      { name: 'en-US-MonicaNeural', lang: 'en-US', displayName: 'Monica (Female, US)' },
-      { name: 'en-US-NancyNeural', lang: 'en-US', displayName: 'Nancy (Female, US)' },
-      { name: 'en-US-RogerNeural', lang: 'en-US', displayName: 'Roger (Male, US)' },
-      { name: 'en-US-SaraNeural', lang: 'en-US', displayName: 'Sara (Female, US)' },
-      { name: 'en-US-TonyNeural', lang: 'en-US', displayName: 'Tony (Male, US)' }
+      
     ];
   }
 
