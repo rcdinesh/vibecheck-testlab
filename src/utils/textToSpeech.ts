@@ -170,12 +170,7 @@ class AzureSpeechTTS implements TTSProvider {
           },
           body: JSON.stringify({
             text,
-            voice: settings.voice || 'en-US-AvaMultilingualNeural',
-            rate: settings.rate ?? 1.0,
-            pitch: settings.pitch ?? 1.0,
-            volume: settings.volume ?? 1.0,
-            emotion: settings.emotion || 'natural',
-            speaker_id: settings.speaker_id
+            voice: 'en-US-AvaMultilingualNeural'
           }),
           signal: controller.signal
         });
@@ -325,19 +320,8 @@ export class VibeVoiceTTS {
   }
 
   private processText(text: string, settings?: VoiceSettings): string {
-    // Apply VibeVoice-style text processing with system prompt
-    const speakerId = settings?.speaker_id || 'default';
-    const emotion = settings?.emotion || 'natural';
-    
-    // For long text, minimize metadata overhead
-    if (text.length > 1000) {
-      return text; // Skip metadata for long text to save on token usage
-    }
-    
-    // Simulate VibeVoice's speaker-aware text transformation for short text
-    const processedText = `[Speaker: ${speakerId}] [Emotion: ${emotion}] ${text}`;
-    
-    return processedText;
+    // Just return the plain text without any formatting
+    return text;
   }
 
   private enhanceSettings(settings?: VoiceSettings): VoiceSettings {
