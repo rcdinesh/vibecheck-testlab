@@ -49,11 +49,11 @@ const Index = () => {
               <Sparkles className="w-4 h-4 text-voice-accent absolute -top-1 -right-1" />
             </div>
             <h1 className="text-4xl font-bold bg-gradient-voice bg-clip-text text-transparent">
-              Microsoft Vibecoice
+              Azure TTS
             </h1>
           </div>
           <p className="text-xl text-muted-foreground mb-4">
-            Advanced Voice Synthesis Testing Platform
+            Azure Text-to-Speech Testing Platform
           </p>
           <Badge variant="outline" className="bg-voice-primary/10 border-voice-primary/20">
             Testing Environment
@@ -61,56 +61,20 @@ const Index = () => {
         </div>
 
         {/* Main Content */}
-        <div className="grid lg:grid-cols-3 gap-8">
-          {/* Voice Controls - Takes 2 columns */}
-          <div className="lg:col-span-2">
-            <VoiceControls
-              onTextChange={handleTextChange}
-              onStartRecording={handleStartRecording}
-              onStopRecording={handleStopRecording}
-              onPlay={handlePlay}
-              onStop={handleStop}
-            />
-          </div>
-
-          {/* Status Panel - Takes 1 column */}
-          <div className="space-y-6">
-            <VoiceStatus
-              isConnected={true}
-              isRecording={isRecording}
-              isPlaying={isPlaying}
-              quality="excellent"
-            />
-
-            {/* Quick Stats */}
-            <Card className="p-6 bg-gradient-card border-border/50">
-              <h3 className="text-lg font-semibold mb-4 text-foreground">Session Info</h3>
-              <div className="space-y-3">
-                <div className="flex justify-between items-center">
-                  <span className="text-sm text-muted-foreground">Characters</span>
-                  <span className="text-sm font-medium">{currentText.length}</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-sm text-muted-foreground">Voice Model</span>
-                  <Badge variant="outline" className="text-xs">Vibecoice-v1</Badge>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-sm text-muted-foreground">Latency</span>
-                  <span className="text-sm font-medium text-voice-success">42ms</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-sm text-muted-foreground">Quality</span>
-                  <span className="text-sm font-medium text-voice-primary">High</span>
-                </div>
-              </div>
-            </Card>
-          </div>
+        <div className="max-w-4xl mx-auto">
+          <VoiceControls
+            onTextChange={handleTextChange}
+            onStartRecording={handleStartRecording}
+            onStopRecording={handleStopRecording}
+            onPlay={handlePlay}
+            onStop={handleStop}
+          />
         </div>
 
         {/* Footer */}
         <div className="mt-12 text-center">
           <p className="text-sm text-muted-foreground">
-            Microsoft Vibecoice Testing Interface • Version 1.0.0
+            Azure TTS Testing Interface • Version 1.0.0
           </p>
         </div>
       </div>
