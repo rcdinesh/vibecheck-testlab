@@ -10,7 +10,7 @@ interface VoiceSettings {
 }
 
 interface TTSProvider {
-  speak(text: string, settings?: VoiceSettings): Promise<void>;
+  speak(text: string, settings?: VoiceSettings): Promise<string>;
   stop(): void;
   getVoices(): Promise<any[]>;
   isSupported(): boolean;
@@ -28,7 +28,9 @@ class AzureSpeechTTS implements TTSProvider {
   private readonly REQUEST_TIMEOUT = 45000; // 45 seconds timeout
   private readonly MAX_RETRIES = 3;
 
-  async speak(text: string, settings: VoiceSettings = {}): Promise<void> {
+  private audioData: string | null = null;
+
+  async speak(text: string, settings: VoiceSettings = {}): Promise<string> {
     return new Promise(async (resolve, reject) => {
       try {
         this.stop(); // Stop any ongoing speech
@@ -36,10 +38,10 @@ class AzureSpeechTTS implements TTSProvider {
         // Check if text needs chunking
         if (text.length <= this.MAX_CHUNK_LENGTH) {
           await this.speakSingle(text, settings);
-          resolve();
+          resolve(this.audioData || '');
         } else {
           await this.speakChunked(text, settings);
-          resolve();
+          resolve(this.audioData || '');
         }
       } catch (error) {
         reject(error);
@@ -187,6 +189,9 @@ class AzureSpeechTTS implements TTSProvider {
           throw new Error(data.error);
         }
 
+        // Store the audio data for download
+        this.audioData = data.audio;
+
         // Convert base64 to blob and create audio element
         const audioBlob = this.base64ToBlob(data.audio, 'audio/mp3');
         const audioUrl = URL.createObjectURL(audioBlob);
@@ -287,7 +292,7 @@ export class VibeVoiceTTS {
     this.onProgress = onProgress;
   }
 
-  async speak(text: string, settings?: VoiceSettings): Promise<void> {
+  async speak(text: string, settings?: VoiceSettings): Promise<string> {
     try {
       this.setPlaying(true);
       
@@ -298,7 +303,7 @@ export class VibeVoiceTTS {
       const processedText = this.processText(text, settings);
       const enhancedSettings = this.enhanceSettings(settings);
       
-      await this.provider.speak(processedText, enhancedSettings);
+      const audioData = await this.provider.speak(processedText, enhancedSettings);
       
       // Notify completion
       this.onProgress?.(1, 1, 'Synthesis completed');
@@ -310,6 +315,8 @@ export class VibeVoiceTTS {
         settings: enhancedSettings,
         systemPrompt: this.systemPrompt
       });
+      
+      return audioData;
     } catch (error) {
       console.error('VibeVoice synthesis error:', error);
       this.onProgress?.(0, 1, `Error: ${error instanceof Error ? error.message : 'Unknown error'}`);

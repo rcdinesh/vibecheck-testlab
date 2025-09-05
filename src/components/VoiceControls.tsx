@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Mic, MicOff, Play, Square, Volume2, Settings } from "lucide-react";
+import { Mic, MicOff, Play, Square, Volume2, Settings, Download } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { VibeVoiceTTS, VIBEVOICE_PRESETS, VibeVoicePreset } from "@/utils/textToSpeech";
 import { useToast } from "@/components/ui/use-toast";
@@ -25,7 +25,8 @@ const VoiceControls = ({
 }: VoiceControlsProps) => {
   const [isRecording, setIsRecording] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [text, setText] = useState("Welcome to Microsoft VibeVoice testing. Enter your text here to test voice synthesis capabilities.");
+  const [text, setText] = useState("");
+  const [lastAudioData, setLastAudioData] = useState<string | null>(null);
   const [selectedPreset, setSelectedPreset] = useState<VibeVoicePreset>("natural");
   const [vibeVoice] = useState(() => new VibeVoiceTTS((playing) => setIsPlaying(playing)));
   const [availableVoices, setAvailableVoices] = useState<SpeechSynthesisVoice[]>([]);
@@ -47,13 +48,23 @@ const VoiceControls = ({
       vibeVoice.stop();
       onStop?.();
     } else {
+      if (!text.trim()) {
+        toast({
+          title: "No text to speak",
+          description: "Please enter some text first.",
+          variant: "destructive",
+        });
+        return;
+      }
+
       try {
         onPlay?.();
         const settings = {
           ...VIBEVOICE_PRESETS[selectedPreset],
           voice: selectedVoice || undefined,
         };
-        await vibeVoice.speak(text, settings);
+        const audioData = await vibeVoice.speak(text, settings);
+        setLastAudioData(audioData);
         toast({
           title: "Speech Complete",
           description: "Text-to-speech synthesis finished.",
@@ -67,6 +78,50 @@ const VoiceControls = ({
         });
         setIsPlaying(false);
       }
+    }
+  };
+
+  const handleDownload = () => {
+    if (!lastAudioData) {
+      toast({
+        title: "No audio to download",
+        description: "Please generate speech first.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      // Convert base64 to blob
+      const byteCharacters = atob(lastAudioData);
+      const byteNumbers = new Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+      }
+      const byteArray = new Uint8Array(byteNumbers);
+      const blob = new Blob([byteArray], { type: 'audio/mp3' });
+
+      // Create download link
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `azure-tts-${Date.now()}.mp3`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      toast({
+        title: "Download started",
+        description: "MP3 file is being downloaded.",
+      });
+    } catch (error) {
+      console.error("Download failed:", error);
+      toast({
+        title: "Download failed",
+        description: "Failed to download audio file.",
+        variant: "destructive",
+      });
     }
   };
 
@@ -98,31 +153,50 @@ const VoiceControls = ({
           <h2 className="text-2xl font-semibold text-foreground">Text to Speech</h2>
         </div>
         
-        <Textarea
-          placeholder="Enter text to synthesize..."
-          value={text}
-          onChange={(e) => handleTextChange(e.target.value)}
-          className="min-h-[150px] resize-none border-border/50 focus:border-voice-primary text-lg"
-        />
+        <div className="space-y-2">
+          <div className="flex justify-between items-center">
+            <span className="text-sm text-muted-foreground">Character count:</span>
+            <span className="text-sm font-medium text-voice-primary">{text.length}</span>
+          </div>
+          <Textarea
+            placeholder="Enter text to synthesize..."
+            value={text}
+            onChange={(e) => handleTextChange(e.target.value)}
+            className="min-h-[150px] resize-none border-border/50 focus:border-voice-primary text-lg"
+          />
+        </div>
         
-        <Button
-          onClick={handlePlayToggle}
-          disabled={!text.trim()}
-          size="lg"
-          className="w-full bg-voice-primary hover:bg-voice-primary/90 text-white font-medium py-4 text-lg rounded-lg transition-all duration-200"
-        >
-          {isPlaying ? (
-            <>
-              <Square className="w-6 h-6 mr-2" />
-              Stop Synthesis
-            </>
-          ) : (
-            <>
-              <Play className="w-6 h-6 mr-2" />
-              Synthesize Speech
-            </>
-          )}
-        </Button>
+        <div className="flex gap-3">
+          <Button
+            onClick={handlePlayToggle}
+            disabled={!text.trim()}
+            size="lg"
+            className="flex-1 bg-voice-primary hover:bg-voice-primary/90 text-white font-medium py-4 text-lg rounded-lg transition-all duration-200"
+          >
+            {isPlaying ? (
+              <>
+                <Square className="w-6 h-6 mr-2" />
+                Stop Synthesis
+              </>
+            ) : (
+              <>
+                <Play className="w-6 h-6 mr-2" />
+                Synthesize Speech
+              </>
+            )}
+          </Button>
+          
+          <Button
+            onClick={handleDownload}
+            variant="outline"
+            disabled={!lastAudioData}
+            size="lg"
+            className="border-voice-primary/20 hover:bg-voice-primary/10 py-4 text-lg"
+          >
+            <Download className="w-6 h-6 mr-2" />
+            Download MP3
+          </Button>
+        </div>
         
         <div className="text-center">
           <div className="text-sm text-muted-foreground mb-2">
