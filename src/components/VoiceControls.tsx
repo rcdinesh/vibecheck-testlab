@@ -8,6 +8,7 @@ import { Mic, MicOff, Play, Square, Volume2, Settings, Download } from "lucide-r
 import { cn } from "@/lib/utils";
 import { VibeVoiceTTS, VIBEVOICE_PRESETS, VibeVoicePreset } from "@/utils/textToSpeech";
 import { useToast } from "@/components/ui/use-toast";
+import AudioPlayer from "./AudioPlayer";
 
 interface VoiceControlsProps {
   onTextChange?: (text: string) => void;
@@ -92,30 +93,16 @@ const VoiceControls = ({
     }
   };
 
-  const handlePlay = () => {
-    if (audioUrl) {
-      const audio = new Audio(audioUrl);
-      setIsPlaying(true);
-      onPlay?.();
-      
-      audio.onended = () => {
-        setIsPlaying(false);
-        onStop?.();
-      };
-      
-      audio.play().catch((error) => {
-        console.error("Playback error:", error);
-        setIsPlaying(false);
-        toast({
-          title: "Playback Error",
-          description: "Failed to play audio.",
-          variant: "destructive",
-        });
-      });
-    }
+  const handleAudioPlay = () => {
+    setIsPlaying(true);
+    onPlay?.();
   };
 
-  const handleStop = () => {
+  const handleAudioPause = () => {
+    setIsPlaying(false);
+  };
+
+  const handleAudioStop = () => {
     setIsPlaying(false);
     onStop?.();
   };
@@ -226,48 +213,16 @@ const VoiceControls = ({
           </Button>
         </div>
         
-        {lastAudioData && (
-          <div className="p-4 bg-background/50 rounded-lg border border-border/50 space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-medium text-foreground">Audio Ready</span>
-              <div className="flex gap-2">
-                <Button
-                  onClick={handlePlay}
-                  disabled={isPlaying}
-                  size="sm"
-                  variant="outline"
-                  className="border-voice-primary/20 hover:bg-voice-primary/10"
-                >
-                  <Play className="w-4 h-4 mr-1" />
-                  Play
-                </Button>
-                <Button
-                  onClick={handleStop}
-                  disabled={!isPlaying}
-                  size="sm"
-                  variant="outline"
-                  className="border-voice-primary/20 hover:bg-voice-primary/10"
-                >
-                  <Square className="w-4 h-4 mr-1" />
-                  Stop
-                </Button>
-                <Button
-                  onClick={handleDownload}
-                  size="sm"
-                  variant="outline"
-                  className="border-voice-primary/20 hover:bg-voice-primary/10"
-                >
-                  <Download className="w-4 h-4 mr-1" />
-                  Download MP3
-                </Button>
-              </div>
-            </div>
-            {isPlaying && (
-              <div className="w-full bg-muted rounded-full h-2 overflow-hidden">
-                <div className="bg-voice-primary h-full rounded-full animate-pulse"></div>
-              </div>
-            )}
-          </div>
+        {lastAudioData && audioUrl && (
+          <AudioPlayer
+            audioUrl={audioUrl}
+            audioData={lastAudioData}
+            onDownload={handleDownload}
+            isPlaying={isPlaying}
+            onPlay={handleAudioPlay}
+            onPause={handleAudioPause}
+            onStop={handleAudioStop}
+          />
         )}
         
         <div className="text-center">

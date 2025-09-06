@@ -54,16 +54,10 @@ class AzureSpeechTTS implements TTSProvider {
     try {
       this.stop(); // Stop any ongoing speech
       
-      // Synthesize without playing - just get the audio data
-      if (text.length <= this.MAX_CHUNK_LENGTH) {
-        await this.synthesizeChunkOnly(text, settings);
-        return this.audioData || '';
-      } else {
-        // For long text, just synthesize the first chunk for now
-        const chunks = this.chunkText(text);
-        await this.synthesizeChunkOnly(chunks[0], settings);
-        return this.audioData || '';
-      }
+      // For any text length, send the complete text to Azure TTS
+      // Azure TTS can handle longer text than our chunking limit
+      await this.synthesizeChunkOnly(text, settings);
+      return this.audioData || '';
     } catch (error) {
       throw error;
     }
