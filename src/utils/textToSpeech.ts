@@ -11,6 +11,7 @@ interface VoiceSettings {
 
 interface TTSProvider {
   speak(text: string, settings?: VoiceSettings): Promise<string>;
+  synthesizeOnly(text: string, settings?: VoiceSettings): Promise<string>;
   stop(): void;
   getVoices(): Promise<any[]>;
   isSupported(): boolean;
@@ -47,6 +48,26 @@ class AzureSpeechTTS implements TTSProvider {
         reject(error);
       }
     });
+  }
+
+  async synthesizeOnly(text: string, settings: VoiceSettings = {}): Promise<string> {
+    try {
+      this.stop(); // Stop any ongoing speech
+      
+      // Synthesize without playing
+      if (text.length <= this.MAX_CHUNK_LENGTH) {
+        const audioElement = await this.synthesizeChunk(text, settings);
+        return this.audioData || '';
+      } else {
+        // For long text, just synthesize the first chunk for now
+        // You could enhance this to concatenate multiple chunks
+        const chunks = this.chunkText(text);
+        const audioElement = await this.synthesizeChunk(chunks[0], settings);
+        return this.audioData || '';
+      }
+    } catch (error) {
+      throw error;
+    }
   }
 
   private async speakSingle(text: string, settings: VoiceSettings): Promise<void> {
@@ -323,6 +344,35 @@ export class VibeVoiceTTS {
       throw error;
     } finally {
       this.setPlaying(false);
+    }
+  }
+
+  async synthesizeOnly(text: string, settings?: VoiceSettings): Promise<string> {
+    try {
+      // Notify progress start
+      this.onProgress?.(0, 1, 'Starting synthesis...');
+      
+      // Apply VibeVoice-style processing
+      const processedText = this.processText(text, settings);
+      const enhancedSettings = this.enhanceSettings(settings);
+      
+      const audioData = await this.provider.synthesizeOnly(processedText, enhancedSettings);
+      
+      // Notify completion
+      this.onProgress?.(1, 1, 'Synthesis completed');
+      
+      console.log('VibeVoice synthesis-only completed:', {
+        originalText: text.substring(0, 100) + (text.length > 100 ? '...' : ''),
+        textLength: text.length,
+        processedLength: processedText.length,
+        settings: enhancedSettings
+      });
+      
+      return audioData;
+    } catch (error) {
+      console.error('VibeVoice synthesis error:', error);
+      this.onProgress?.(0, 1, `Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      throw error;
     }
   }
 

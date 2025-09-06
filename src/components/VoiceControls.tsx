@@ -62,7 +62,7 @@ const VoiceControls = ({
         ...VIBEVOICE_PRESETS[selectedPreset],
         voice: selectedVoice || undefined,
       };
-      const audioData = await vibeVoice.speak(text, settings);
+      const audioData = await vibeVoice.synthesizeOnly(text, settings);
       setLastAudioData(audioData);
       
       // Create audio URL for playback
