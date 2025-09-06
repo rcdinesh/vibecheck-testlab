@@ -25,8 +25,10 @@ const VoiceControls = ({
 }: VoiceControlsProps) => {
   const [isRecording, setIsRecording] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [isSynthesizing, setIsSynthesizing] = useState(false);
   const [text, setText] = useState("");
   const [lastAudioData, setLastAudioData] = useState<string | null>(null);
+  const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [selectedPreset, setSelectedPreset] = useState<VibeVoicePreset>("natural");
   const [vibeVoice] = useState(() => new VibeVoiceTTS((playing) => setIsPlaying(playing)));
   const [availableVoices, setAvailableVoices] = useState<SpeechSynthesisVoice[]>([]);
@@ -43,42 +45,78 @@ const VoiceControls = ({
     }
   };
 
-  const handlePlayToggle = async () => {
-    if (isPlaying) {
-      vibeVoice.stop();
-      onStop?.();
-    } else {
-      if (!text.trim()) {
-        toast({
-          title: "No text to speak",
-          description: "Please enter some text first.",
-          variant: "destructive",
-        });
-        return;
-      }
-
-      try {
-        onPlay?.();
-        const settings = {
-          ...VIBEVOICE_PRESETS[selectedPreset],
-          voice: selectedVoice || undefined,
-        };
-        const audioData = await vibeVoice.speak(text, settings);
-        setLastAudioData(audioData);
-        toast({
-          title: "Speech Complete",
-          description: "Text-to-speech synthesis finished.",
-        });
-      } catch (error) {
-        console.error("TTS Error:", error);
-        toast({
-          title: "Speech Error",
-          description: "Failed to synthesize speech. Please try again.",
-          variant: "destructive",
-        });
-        setIsPlaying(false);
-      }
+  const handleSynthesize = async () => {
+    if (!text.trim()) {
+      toast({
+        title: "No text to speak",
+        description: "Please enter some text first.",
+        variant: "destructive",
+      });
+      return;
     }
+
+    try {
+      setIsSynthesizing(true);
+      const settings = {
+        ...VIBEVOICE_PRESETS[selectedPreset],
+        voice: selectedVoice || undefined,
+      };
+      const audioData = await vibeVoice.speak(text, settings);
+      setLastAudioData(audioData);
+      
+      // Create audio URL for playback
+      const byteCharacters = atob(audioData);
+      const byteNumbers = new Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+      }
+      const byteArray = new Uint8Array(byteNumbers);
+      const blob = new Blob([byteArray], { type: 'audio/mp3' });
+      const url = URL.createObjectURL(blob);
+      setAudioUrl(url);
+      
+      toast({
+        title: "Speech Complete",
+        description: "Text-to-speech synthesis finished.",
+      });
+    } catch (error) {
+      console.error("TTS Error:", error);
+      toast({
+        title: "Speech Error",
+        description: "Failed to synthesize speech. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSynthesizing(false);
+    }
+  };
+
+  const handlePlay = () => {
+    if (audioUrl) {
+      const audio = new Audio(audioUrl);
+      setIsPlaying(true);
+      onPlay?.();
+      
+      audio.onended = () => {
+        setIsPlaying(false);
+        onStop?.();
+      };
+      
+      audio.play().catch((error) => {
+        console.error("Playback error:", error);
+        setIsPlaying(false);
+        toast({
+          title: "Playback Error",
+          description: "Failed to play audio.",
+          variant: "destructive",
+        });
+      });
+    }
+  };
+
+  const handleStop = () => {
+    setIsPlaying(false);
+    onStop?.();
   };
 
   const handleDownload = () => {
@@ -168,15 +206,15 @@ const VoiceControls = ({
         
         <div className="flex gap-3">
           <Button
-            onClick={handlePlayToggle}
-            disabled={!text.trim()}
+            onClick={handleSynthesize}
+            disabled={!text.trim() || isSynthesizing}
             size="lg"
             className="flex-1 bg-voice-primary hover:bg-voice-primary/90 text-white font-medium py-4 text-lg rounded-lg transition-all duration-200"
           >
-            {isPlaying ? (
+            {isSynthesizing ? (
               <>
-                <Square className="w-6 h-6 mr-2" />
-                Stop Synthesis
+                <Square className="w-6 h-6 mr-2 animate-pulse" />
+                Synthesizing...
               </>
             ) : (
               <>
@@ -185,18 +223,51 @@ const VoiceControls = ({
               </>
             )}
           </Button>
-          
-          <Button
-            onClick={handleDownload}
-            variant="outline"
-            disabled={!lastAudioData}
-            size="lg"
-            className="border-voice-primary/20 hover:bg-voice-primary/10 py-4 text-lg"
-          >
-            <Download className="w-6 h-6 mr-2" />
-            Download MP3
-          </Button>
         </div>
+        
+        {lastAudioData && (
+          <div className="p-4 bg-background/50 rounded-lg border border-border/50 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-medium text-foreground">Audio Ready</span>
+              <div className="flex gap-2">
+                <Button
+                  onClick={handlePlay}
+                  disabled={isPlaying}
+                  size="sm"
+                  variant="outline"
+                  className="border-voice-primary/20 hover:bg-voice-primary/10"
+                >
+                  <Play className="w-4 h-4 mr-1" />
+                  Play
+                </Button>
+                <Button
+                  onClick={handleStop}
+                  disabled={!isPlaying}
+                  size="sm"
+                  variant="outline"
+                  className="border-voice-primary/20 hover:bg-voice-primary/10"
+                >
+                  <Square className="w-4 h-4 mr-1" />
+                  Stop
+                </Button>
+                <Button
+                  onClick={handleDownload}
+                  size="sm"
+                  variant="outline"
+                  className="border-voice-primary/20 hover:bg-voice-primary/10"
+                >
+                  <Download className="w-4 h-4 mr-1" />
+                  Download MP3
+                </Button>
+              </div>
+            </div>
+            {isPlaying && (
+              <div className="w-full bg-muted rounded-full h-2 overflow-hidden">
+                <div className="bg-voice-primary h-full rounded-full animate-pulse"></div>
+              </div>
+            )}
+          </div>
+        )}
         
         <div className="text-center">
           <div className="text-sm text-muted-foreground mb-2">
