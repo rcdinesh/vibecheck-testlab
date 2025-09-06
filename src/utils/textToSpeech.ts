@@ -54,20 +54,71 @@ class AzureSpeechTTS implements TTSProvider {
     try {
       this.stop(); // Stop any ongoing speech
       
-      // Synthesize without playing
+      // Synthesize without playing - just get the audio data
       if (text.length <= this.MAX_CHUNK_LENGTH) {
-        const audioElement = await this.synthesizeChunk(text, settings);
+        await this.synthesizeChunkOnly(text, settings);
         return this.audioData || '';
       } else {
         // For long text, just synthesize the first chunk for now
-        // You could enhance this to concatenate multiple chunks
         const chunks = this.chunkText(text);
-        const audioElement = await this.synthesizeChunk(chunks[0], settings);
+        await this.synthesizeChunkOnly(chunks[0], settings);
         return this.audioData || '';
       }
     } catch (error) {
       throw error;
     }
+  }
+
+  private async synthesizeChunkOnly(text: string, settings: VoiceSettings, retryCount = 0): Promise<void> {
+    return new Promise(async (resolve, reject) => {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), this.REQUEST_TIMEOUT);
+
+        const response = await fetch(`${this.supabaseUrl}/functions/v1/azure-tts`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            text,
+            voice: 'en-US-AvaMultilingualNeural'
+          }),
+          signal: controller.signal
+        });
+
+        clearTimeout(timeoutId);
+
+        if (!response.ok) {
+          throw new Error(`Azure TTS request failed: ${response.status} ${response.statusText}`);
+        }
+
+        const data = await response.json();
+        
+        if (data.error) {
+          throw new Error(data.error);
+        }
+
+        // Store the audio data but don't create audio element
+        this.audioData = data.audio;
+        resolve();
+      } catch (error) {
+        // Retry logic for failed requests
+        if (retryCount < this.MAX_RETRIES && 
+            (error instanceof Error && (error.name === 'AbortError' || error.message.includes('timeout')))) {
+          console.log(`Retrying chunk synthesis (attempt ${retryCount + 1}/${this.MAX_RETRIES})`);
+          await new Promise(resolve => setTimeout(resolve, 1000 * (retryCount + 1))); // Exponential backoff
+          try {
+            await this.synthesizeChunkOnly(text, settings, retryCount + 1);
+            resolve();
+          } catch (retryError) {
+            reject(retryError);
+          }
+        } else {
+          reject(error);
+        }
+      }
+    });
   }
 
   private async speakSingle(text: string, settings: VoiceSettings): Promise<void> {
