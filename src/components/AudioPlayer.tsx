@@ -107,7 +107,7 @@ const AudioPlayer = ({
             size="sm"
             variant="outline"
             className="border-voice-primary/20 hover:bg-voice-primary/10"
-            disabled={!duration}
+            disabled={!audioUrl}
           >
             {isPlaying ? (
               <Pause className="w-4 h-4 mr-1" />

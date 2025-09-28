@@ -170,7 +170,8 @@ const VoiceControls = ({
       const url = URL.createObjectURL(audioToDownload);
       const a = document.createElement('a');
       a.href = url;
-      const filename = musicConfig.enabled ? `kidcast-episode-${Date.now()}.mp3` : `azure-tts-${Date.now()}.mp3`;
+      const ext = audioToDownload.type.includes('wav') ? 'wav' : 'mp3';
+      const filename = musicConfig.enabled ? `kidcast-episode-${Date.now()}.${ext}` : `azure-tts-${Date.now()}.mp3`;
       a.download = filename;
       document.body.appendChild(a);
       a.click();

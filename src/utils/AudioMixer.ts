@@ -65,28 +65,21 @@ export class AudioMixer {
 
     await this.initialize();
     
-    // Create speech audio element
+    // Decode speech to get accurate duration before creating OfflineAudioContext
     const speechBlob = this.base64ToBlob(speechAudioData);
-    const speechUrl = URL.createObjectURL(speechBlob);
-    this.speechAudio = new Audio(speechUrl);
+    const speechArrayBuffer = await speechBlob.arrayBuffer();
+    const speechBufferForDuration = await this.audioContext!.decodeAudioData(speechArrayBuffer.slice(0));
+    const speechDuration = speechBufferForDuration.duration;
 
-    return new Promise((resolve, reject) => {
-      this.speechAudio!.addEventListener('loadedmetadata', () => {
-        const speechDuration = this.speechAudio!.duration;
-        
-        // Create offline context for mixing with accurate timing
-        const totalDuration = config.introDuration + config.fadeDuration + speechDuration + (config.outroEnabled ? config.outroDuration : 0);
-        const offlineContext = new OfflineAudioContext(
-          2, // stereo
-          Math.ceil(totalDuration * this.audioContext!.sampleRate),
-          this.audioContext!.sampleRate
-        );
+    // Create offline context for mixing with accurate timing
+    const totalDuration = config.introDuration + config.fadeDuration + speechDuration + (config.outroEnabled ? config.outroDuration : 0);
+    const offlineContext = new OfflineAudioContext(
+      2, // stereo
+      Math.ceil(totalDuration * this.audioContext!.sampleRate),
+      this.audioContext!.sampleRate
+    );
 
-        this.createMixedAudioWithOutro(offlineContext, speechAudioData, speechDuration, config)
-          .then(resolve)
-          .catch(reject);
-      });
-    });
+    return this.createMixedAudioWithOutro(offlineContext, speechAudioData, speechDuration, config);
   }
 
   private async createMixedAudioWithOutro(
@@ -103,10 +96,12 @@ export class AudioMixer {
     // Create music sources (intro and outro)
     const musicIntroSource = offlineContext.createBufferSource();
     musicIntroSource.buffer = this.musicBuffer;
+    musicIntroSource.loop = true;
     
     const musicOutroSource = config.outroEnabled ? offlineContext.createBufferSource() : null;
     if (musicOutroSource) {
       musicOutroSource.buffer = this.musicBuffer;
+      musicOutroSource.loop = true;
     }
     
     // Create speech source
@@ -153,10 +148,10 @@ export class AudioMixer {
 
     // Outro music scheduling
     if (config.outroEnabled && musicOutroGain && musicOutroSource) {
-      const outroFadeInStart = speechEndTime - config.outroFadeInDuration;
+      const outroFadeInStart = Math.max(0, speechEndTime - config.outroFadeInDuration);
       const outroFadeInEnd = speechEndTime;
-      const outroFadeOutStart = speechEndTime + config.outroDuration - 2; // fade out over last 2 seconds
       const outroFadeOutEnd = speechEndTime + config.outroDuration;
+      const outroFadeOutStart = Math.max(outroFadeInEnd, outroFadeOutEnd - 2); // 2s fade out
       
       // Outro music fade in (during last part of speech)
       musicOutroGain.gain.setValueAtTime(0, outroFadeInStart);
