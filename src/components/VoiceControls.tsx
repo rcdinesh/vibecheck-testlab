@@ -3,12 +3,16 @@ import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
+import { Slider } from "@/components/ui/slider";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Mic, MicOff, Play, Square, Volume2, Settings, Download } from "lucide-react";
+import { Mic, MicOff, Play, Square, Volume2, Settings, Download, Music } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { VibeVoiceTTS, VIBEVOICE_PRESETS, VibeVoicePreset } from "@/utils/textToSpeech";
+import { AudioMixer, MusicConfig } from "@/utils/AudioMixer";
 import { useToast } from "@/components/ui/use-toast";
 import AudioPlayer from "./AudioPlayer";
+import kidcastTheme from "@/assets/kidcast-theme.mp3";
 
 interface VoiceControlsProps {
   onTextChange?: (text: string) => void;
@@ -35,6 +39,22 @@ const VoiceControls = ({
   const [vibeVoice] = useState(() => new VibeVoiceTTS((playing) => setIsPlaying(playing)));
   const [availableVoices, setAvailableVoices] = useState<SpeechSynthesisVoice[]>([]);
   const [selectedVoice, setSelectedVoice] = useState<string>("");
+  
+  // Music integration state
+  const [musicConfig, setMusicConfig] = useState<MusicConfig>({
+    enabled: true,
+    introDuration: 15,
+    fadeDuration: 7,
+    fadeType: 'linear',
+    musicVolume: 0.6,
+    speechVolume: 0.8
+  });
+  const [audioMixer] = useState(() => new AudioMixer({
+    onMusicEnd: () => console.log('Music ended'),
+    onSpeechStart: () => console.log('Speech started'),
+    onMixComplete: () => setIsPlaying(false)
+  }));
+  
   const { toast } = useToast();
 
   const handleRecordToggle = () => {
@@ -59,6 +79,12 @@ const VoiceControls = ({
 
     try {
       setIsSynthesizing(true);
+      
+      // Load music file if music is enabled
+      if (musicConfig.enabled && audioMixer.isSupported()) {
+        await audioMixer.loadMusicFile(kidcastTheme);
+      }
+      
       const settings = {
         ...VIBEVOICE_PRESETS[selectedPreset],
         voice: selectedVoice || undefined,
@@ -66,20 +92,26 @@ const VoiceControls = ({
       const audioData = await vibeVoice.synthesizeOnly(text, settings);
       setLastAudioData(audioData);
       
-      // Create audio URL for playback
-      const byteCharacters = atob(audioData);
-      const byteNumbers = new Array(byteCharacters.length);
-      for (let i = 0; i < byteCharacters.length; i++) {
-        byteNumbers[i] = byteCharacters.charCodeAt(i);
+      // Create mixed audio URL
+      if (musicConfig.enabled && audioMixer.isSupported()) {
+        const { mixedUrl } = await audioMixer.mixWithSpeech(audioData, musicConfig);
+        setAudioUrl(mixedUrl);
+      } else {
+        // Create speech-only URL
+        const byteCharacters = atob(audioData);
+        const byteNumbers = new Array(byteCharacters.length);
+        for (let i = 0; i < byteCharacters.length; i++) {
+          byteNumbers[i] = byteCharacters.charCodeAt(i);
+        }
+        const byteArray = new Uint8Array(byteNumbers);
+        const blob = new Blob([byteArray], { type: 'audio/mp3' });
+        const url = URL.createObjectURL(blob);
+        setAudioUrl(url);
       }
-      const byteArray = new Uint8Array(byteNumbers);
-      const blob = new Blob([byteArray], { type: 'audio/mp3' });
-      const url = URL.createObjectURL(blob);
-      setAudioUrl(url);
       
       toast({
-        title: "Speech Complete",
-        description: "Text-to-speech synthesis finished.",
+        title: musicConfig.enabled ? "Mixed Audio Ready" : "Speech Complete",
+        description: musicConfig.enabled ? "Music intro + speech ready to play." : "Text-to-speech synthesis finished.",
       });
     } catch (error) {
       console.error("TTS Error:", error);
@@ -179,6 +211,42 @@ const VoiceControls = ({
           <h2 className="text-2xl font-semibold text-foreground">Text to Speech</h2>
         </div>
         
+        {/* Music Controls */}
+        <div className="space-y-4 p-4 bg-gradient-to-r from-voice-primary/5 to-voice-secondary/5 rounded-lg border border-voice-primary/20">
+          <div className="flex items-center gap-3">
+            <Music className="w-5 h-5 text-voice-primary" />
+            <span className="font-medium text-foreground">Music Intro</span>
+            <Switch
+              checked={musicConfig.enabled}
+              onCheckedChange={(enabled) => setMusicConfig(prev => ({ ...prev, enabled }))}
+              className="ml-auto"
+            />
+          </div>
+          
+          {musicConfig.enabled && (
+            <div className="space-y-3">
+              <div className="flex items-center gap-3">
+                <span className="text-sm text-muted-foreground w-20">Fade Duration:</span>
+                <Slider
+                  value={[musicConfig.fadeDuration]}
+                  onValueChange={(value) => setMusicConfig(prev => ({ ...prev, fadeDuration: value[0] }))}
+                  min={5}
+                  max={10}
+                  step={1}
+                  className="flex-1"
+                />
+                <span className="text-sm font-medium text-voice-primary w-8">{musicConfig.fadeDuration}s</span>
+              </div>
+              
+              <div className="text-xs text-muted-foreground">
+                • Music plays for 15 seconds
+                • Fades over {musicConfig.fadeDuration} seconds as speech begins
+                • Stops completely when speech starts
+              </div>
+            </div>
+          )}
+        </div>
+
         <div className="space-y-2">
           <div className="flex justify-between items-center">
             <span className="text-sm text-muted-foreground">Character count:</span>
@@ -206,8 +274,8 @@ const VoiceControls = ({
               </>
             ) : (
               <>
-                <Play className="w-6 h-6 mr-2" />
-                Synthesize Speech
+                {musicConfig.enabled ? <Music className="w-6 h-6 mr-2" /> : <Play className="w-6 h-6 mr-2" />}
+                {musicConfig.enabled ? 'Create Episode' : 'Synthesize Speech'}
               </>
             )}
           </Button>
@@ -228,11 +296,16 @@ const VoiceControls = ({
         <div className="text-center">
           <div className="text-sm text-muted-foreground mb-2">
             Using: <span className="font-medium text-voice-primary">Ava Multilingual (Neural)</span>
+            {musicConfig.enabled && (
+              <> + <span className="font-medium text-voice-secondary">Kidcast Theme</span></>
+            )}
           </div>
           <div className="text-xs text-muted-foreground">
             {!vibeVoice.isSupported() 
               ? "Speech synthesis not supported in this browser" 
-              : "Enter text and click to generate speech"
+              : musicConfig.enabled 
+                ? "Create podcast episodes with music intro and speech"
+                : "Enter text and click to generate speech"
             }
           </div>
         </div>
