@@ -35,6 +35,7 @@ const VoiceControls = ({
   const [text, setText] = useState("");
   const [lastAudioData, setLastAudioData] = useState<string | null>(null);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  const [mixedAudioBlob, setMixedAudioBlob] = useState<Blob | null>(null);
   const [selectedPreset, setSelectedPreset] = useState<VibeVoicePreset>("natural");
   const [vibeVoice] = useState(() => new VibeVoiceTTS((playing) => setIsPlaying(playing)));
   const [availableVoices, setAvailableVoices] = useState<SpeechSynthesisVoice[]>([]);
@@ -92,21 +93,28 @@ const VoiceControls = ({
       const audioData = await vibeVoice.synthesizeOnly(text, settings);
       setLastAudioData(audioData);
       
-      // Create mixed audio URL
+      // Create mixed or speech-only audio
       if (musicConfig.enabled && audioMixer.isSupported()) {
-        const { mixedUrl } = await audioMixer.mixWithSpeech(audioData, musicConfig);
-        setAudioUrl(mixedUrl);
+        try {
+          // Create a properly mixed audio file with music intro
+          const mixedBlob = await createMixedAudioBlob(audioData, musicConfig);
+          setMixedAudioBlob(mixedBlob);
+          const mixedUrl = URL.createObjectURL(mixedBlob);
+          setAudioUrl(mixedUrl);
+        } catch (error) {
+          console.error('Failed to create mixed audio:', error);
+          // Fallback to speech-only
+          const speechBlob = base64ToBlob(audioData);
+          setMixedAudioBlob(speechBlob);
+          const speechUrl = URL.createObjectURL(speechBlob);
+          setAudioUrl(speechUrl);
+        }
       } else {
         // Create speech-only URL
-        const byteCharacters = atob(audioData);
-        const byteNumbers = new Array(byteCharacters.length);
-        for (let i = 0; i < byteCharacters.length; i++) {
-          byteNumbers[i] = byteCharacters.charCodeAt(i);
-        }
-        const byteArray = new Uint8Array(byteNumbers);
-        const blob = new Blob([byteArray], { type: 'audio/mp3' });
-        const url = URL.createObjectURL(blob);
-        setAudioUrl(url);
+        const speechBlob = base64ToBlob(audioData);
+        setMixedAudioBlob(speechBlob);
+        const speechUrl = URL.createObjectURL(speechBlob);
+        setAudioUrl(speechUrl);
       }
       
       toast({
@@ -140,7 +148,9 @@ const VoiceControls = ({
   };
 
   const handleDownload = () => {
-    if (!lastAudioData) {
+    const audioToDownload = mixedAudioBlob || (lastAudioData ? base64ToBlob(lastAudioData) : null);
+    
+    if (!audioToDownload) {
       toast({
         title: "No audio to download",
         description: "Please generate speech first.",
@@ -150,20 +160,12 @@ const VoiceControls = ({
     }
 
     try {
-      // Convert base64 to blob
-      const byteCharacters = atob(lastAudioData);
-      const byteNumbers = new Array(byteCharacters.length);
-      for (let i = 0; i < byteCharacters.length; i++) {
-        byteNumbers[i] = byteCharacters.charCodeAt(i);
-      }
-      const byteArray = new Uint8Array(byteNumbers);
-      const blob = new Blob([byteArray], { type: 'audio/mp3' });
-
       // Create download link
-      const url = URL.createObjectURL(blob);
+      const url = URL.createObjectURL(audioToDownload);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `azure-tts-${Date.now()}.mp3`;
+      const filename = musicConfig.enabled ? `kidcast-episode-${Date.now()}.mp3` : `azure-tts-${Date.now()}.mp3`;
+      a.download = filename;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -171,7 +173,7 @@ const VoiceControls = ({
 
       toast({
         title: "Download started",
-        description: "MP3 file is being downloaded.",
+        description: musicConfig.enabled ? "Mixed episode with music intro downloading." : "MP3 file is being downloaded.",
       });
     } catch (error) {
       console.error("Download failed:", error);
@@ -181,6 +183,144 @@ const VoiceControls = ({
         variant: "destructive",
       });
     }
+  };
+
+  const base64ToBlob = (base64: string): Blob => {
+    const byteCharacters = atob(base64);
+    const byteNumbers = new Array(byteCharacters.length);
+    for (let i = 0; i < byteCharacters.length; i++) {
+      byteNumbers[i] = byteCharacters.charCodeAt(i);
+    }
+    const byteArray = new Uint8Array(byteNumbers);
+    return new Blob([byteArray], { type: 'audio/mp3' });
+  };
+
+  const createMixedAudioBlob = async (speechBase64: string, config: MusicConfig): Promise<Blob> => {
+    // Load music file
+    const musicResponse = await fetch(kidcastTheme);
+    const musicArrayBuffer = await musicResponse.arrayBuffer();
+    
+    // Convert speech to array buffer
+    const speechBlob = base64ToBlob(speechBase64);
+    const speechArrayBuffer = await speechBlob.arrayBuffer();
+    
+    // Create audio context for mixing
+    const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+    
+    // Decode audio data
+    const [musicBuffer, speechBuffer] = await Promise.all([
+      audioContext.decodeAudioData(musicArrayBuffer.slice(0)),
+      audioContext.decodeAudioData(speechArrayBuffer.slice(0))
+    ]);
+    
+    // Calculate timing
+    const musicIntroLength = config.introDuration;
+    const fadeLength = config.fadeDuration;
+    const totalLength = musicIntroLength + fadeLength + speechBuffer.duration;
+    
+    // Create offline context for rendering
+    const offlineContext = new OfflineAudioContext(
+      2, // stereo
+      Math.ceil(totalLength * audioContext.sampleRate),
+      audioContext.sampleRate
+    );
+    
+    // Create music source
+    const musicSource = offlineContext.createBufferSource();
+    musicSource.buffer = musicBuffer;
+    
+    // Create speech source
+    const speechSource = offlineContext.createBufferSource();
+    speechSource.buffer = speechBuffer;
+    
+    // Create gain nodes
+    const musicGain = offlineContext.createGain();
+    const speechGain = offlineContext.createGain();
+    const masterGain = offlineContext.createGain();
+    
+    // Connect audio graph
+    musicSource.connect(musicGain);
+    speechSource.connect(speechGain);
+    musicGain.connect(masterGain);
+    speechGain.connect(masterGain);
+    masterGain.connect(offlineContext.destination);
+    
+    // Set initial volumes
+    musicGain.gain.setValueAtTime(config.musicVolume, 0);
+    speechGain.gain.setValueAtTime(0, 0);
+    
+    // Schedule music fade
+    const fadeStartTime = musicIntroLength;
+    const fadeEndTime = fadeStartTime + fadeLength;
+    const speechStartTime = fadeStartTime + (fadeLength / 2);
+    
+    // Music fade out
+    musicGain.gain.setValueAtTime(config.musicVolume, fadeStartTime);
+    musicGain.gain.linearRampToValueAtTime(0, fadeEndTime);
+    
+    // Speech fade in
+    speechGain.gain.setValueAtTime(0, speechStartTime);
+    speechGain.gain.linearRampToValueAtTime(config.speechVolume, speechStartTime + 1);
+    
+    // Start sources
+    musicSource.start(0);
+    speechSource.start(speechStartTime);
+    
+    // Render mixed audio
+    const renderedBuffer = await offlineContext.startRendering();
+    
+    // Convert to blob
+    return audioBufferToBlob(renderedBuffer);
+  };
+
+  const audioBufferToBlob = (buffer: AudioBuffer): Blob => {
+    const numberOfChannels = buffer.numberOfChannels;
+    const sampleRate = buffer.sampleRate;
+    const format = 1; // PCM
+    const bitDepth = 16;
+    
+    const bytesPerSample = bitDepth / 8;
+    const blockAlign = numberOfChannels * bytesPerSample;
+    const byteRate = sampleRate * blockAlign;
+    const dataSize = buffer.length * blockAlign;
+    const bufferSize = 44 + dataSize;
+    
+    const arrayBuffer = new ArrayBuffer(bufferSize);
+    const view = new DataView(arrayBuffer);
+    
+    // WAV header
+    const writeString = (offset: number, str: string) => {
+      for (let i = 0; i < str.length; i++) {
+        view.setUint8(offset + i, str.charCodeAt(i));
+      }
+    };
+    
+    writeString(0, 'RIFF');
+    view.setUint32(4, bufferSize - 8, true);
+    writeString(8, 'WAVE');
+    writeString(12, 'fmt ');
+    view.setUint32(16, 16, true);
+    view.setUint16(20, format, true);
+    view.setUint16(22, numberOfChannels, true);
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, byteRate, true);
+    view.setUint16(32, blockAlign, true);
+    view.setUint16(34, bitDepth, true);
+    writeString(36, 'data');
+    view.setUint32(40, dataSize, true);
+    
+    // Convert audio data
+    let offset = 44;
+    for (let i = 0; i < buffer.length; i++) {
+      for (let channel = 0; channel < numberOfChannels; channel++) {
+        const sample = buffer.getChannelData(channel)[i];
+        const intSample = sample < 0 ? sample * 0x8000 : sample * 0x7FFF;
+        view.setInt16(offset, intSample, true);
+        offset += 2;
+      }
+    }
+    
+    return new Blob([arrayBuffer], { type: 'audio/wav' });
   };
 
   const handleTextChange = (value: string) => {
