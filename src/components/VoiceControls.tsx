@@ -44,14 +44,14 @@ const VoiceControls = ({
   // Music integration state
   const [musicConfig, setMusicConfig] = useState<MusicConfig>({
     enabled: true,
-    introDuration: 15,
+    introDuration: 20,
     fadeDuration: 7,
     fadeType: 'linear',
     musicVolume: 0.6,
     speechVolume: 0.8,
     outroEnabled: true,
     outroFadeInDuration: 10,
-    outroDuration: 8
+    outroDuration: 15
   });
   const [audioMixer] = useState(() => new AudioMixer({
     onMusicEnd: () => console.log('Music ended'),
@@ -394,9 +394,9 @@ const VoiceControls = ({
               </div>
               
               <div className="text-xs text-muted-foreground mt-2">
-                • Music intro: 15s full → {musicConfig.fadeDuration}s fade → speech only
+                • Music intro: 20s full → {musicConfig.fadeDuration}s fade → speech only
                 {musicConfig.outroEnabled && (
-                  <> • Music outro: fades in last 10s of speech → plays 8s after speech ends</>
+                  <> • Music outro: fades in last 10s of speech → plays 15s after speech ends</>
                 )}
               </div>
             </div>
