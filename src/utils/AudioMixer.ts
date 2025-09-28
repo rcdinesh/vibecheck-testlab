@@ -5,6 +5,9 @@ interface MusicConfig {
   fadeType: 'linear' | 'exponential';
   musicVolume: number;       // 0-1
   speechVolume: number;      // 0-1
+  outroEnabled: boolean;
+  outroFadeInDuration: number; // fade in during last X seconds of speech
+  outroDuration: number; // play for X seconds after speech ends
 }
 
 interface AudioMixerOptions {
@@ -68,53 +71,109 @@ export class AudioMixer {
     this.speechAudio = new Audio(speechUrl);
 
     return new Promise((resolve, reject) => {
-      // Create offline context for mixing
-      const offlineContext = new OfflineAudioContext(
-        2, // stereo
-        this.audioContext!.sampleRate * (config.introDuration + config.fadeDuration + 30), // estimated duration
-        this.audioContext!.sampleRate
-      );
+      this.speechAudio!.addEventListener('loadedmetadata', () => {
+        const speechDuration = this.speechAudio!.duration;
+        
+        // Create offline context for mixing with accurate timing
+        const totalDuration = config.introDuration + config.fadeDuration + speechDuration + (config.outroEnabled ? config.outroDuration : 0);
+        const offlineContext = new OfflineAudioContext(
+          2, // stereo
+          Math.ceil(totalDuration * this.audioContext!.sampleRate),
+          this.audioContext!.sampleRate
+        );
 
-      this.createMixedAudio(offlineContext, speechAudioData, config)
-        .then(resolve)
-        .catch(reject);
+        this.createMixedAudioWithOutro(offlineContext, speechAudioData, speechDuration, config)
+          .then(resolve)
+          .catch(reject);
+      });
     });
   }
 
-  private async createMixedAudio(
+  private async createMixedAudioWithOutro(
     offlineContext: OfflineAudioContext,
     speechAudioData: string,
+    speechDuration: number,
     config: MusicConfig
   ): Promise<{ mixedUrl: string; cleanup: () => void }> {
-    // Create music source
-    const musicSource = offlineContext.createBufferSource();
-    musicSource.buffer = this.musicBuffer;
+    // Create speech buffer
+    const speechBlob = this.base64ToBlob(speechAudioData);
+    const speechArrayBuffer = await speechBlob.arrayBuffer();
+    const speechBuffer = await offlineContext.decodeAudioData(speechArrayBuffer);
     
-    // Create gain nodes
-    const musicGain = offlineContext.createGain();
-    const masterGain = offlineContext.createGain();
+    // Create music sources (intro and outro)
+    const musicIntroSource = offlineContext.createBufferSource();
+    musicIntroSource.buffer = this.musicBuffer;
     
-    // Connect audio graph
-    musicSource.connect(musicGain);
-    musicGain.connect(masterGain);
-    masterGain.connect(offlineContext.destination);
-    
-    // Set initial volumes
-    musicGain.gain.setValueAtTime(config.musicVolume, 0);
-    
-    // Schedule music fade
-    const fadeStartTime = config.introDuration;
-    const fadeEndTime = fadeStartTime + config.fadeDuration;
-    
-    if (config.fadeType === 'exponential') {
-      musicGain.gain.exponentialRampToValueAtTime(0.001, fadeEndTime);
-    } else {
-      musicGain.gain.linearRampToValueAtTime(0, fadeEndTime);
+    const musicOutroSource = config.outroEnabled ? offlineContext.createBufferSource() : null;
+    if (musicOutroSource) {
+      musicOutroSource.buffer = this.musicBuffer;
     }
     
-    // Start music
-    musicSource.start(0);
+    // Create speech source
+    const speechSource = offlineContext.createBufferSource();
+    speechSource.buffer = speechBuffer;
     
+    // Create gain nodes
+    const musicIntroGain = offlineContext.createGain();
+    const musicOutroGain = config.outroEnabled ? offlineContext.createGain() : null;
+    const speechGain = offlineContext.createGain();
+    const masterGain = offlineContext.createGain();
+
+    // Connect audio graph
+    musicIntroSource.connect(musicIntroGain);
+    if (musicOutroSource && musicOutroGain) {
+      musicOutroSource.connect(musicOutroGain);
+      musicOutroGain.connect(masterGain);
+    }
+    speechSource.connect(speechGain);
+    musicIntroGain.connect(masterGain);
+    speechGain.connect(masterGain);
+    masterGain.connect(offlineContext.destination);
+
+    // Calculate timing
+    const fadeStartTime = config.introDuration;
+    const fadeEndTime = fadeStartTime + config.fadeDuration;
+    const speechStartTime = fadeStartTime + (config.fadeDuration / 2);
+    const speechEndTime = speechStartTime + speechDuration;
+
+    // Set initial volumes
+    musicIntroGain.gain.setValueAtTime(config.musicVolume, 0);
+    speechGain.gain.setValueAtTime(0, 0);
+    if (musicOutroGain) {
+      musicOutroGain.gain.setValueAtTime(0, 0);
+    }
+
+    // Intro music fade out
+    musicIntroGain.gain.setValueAtTime(config.musicVolume, fadeStartTime);
+    musicIntroGain.gain.linearRampToValueAtTime(0, fadeEndTime);
+
+    // Speech fade in
+    speechGain.gain.setValueAtTime(0, speechStartTime);
+    speechGain.gain.linearRampToValueAtTime(config.speechVolume, speechStartTime + 1);
+
+    // Outro music scheduling
+    if (config.outroEnabled && musicOutroGain && musicOutroSource) {
+      const outroFadeInStart = speechEndTime - config.outroFadeInDuration;
+      const outroFadeInEnd = speechEndTime;
+      const outroFadeOutStart = speechEndTime + config.outroDuration - 2; // fade out over last 2 seconds
+      const outroFadeOutEnd = speechEndTime + config.outroDuration;
+      
+      // Outro music fade in (during last part of speech)
+      musicOutroGain.gain.setValueAtTime(0, outroFadeInStart);
+      musicOutroGain.gain.linearRampToValueAtTime(config.musicVolume * 0.7, outroFadeInEnd);
+      
+      // Outro music fade out
+      musicOutroGain.gain.setValueAtTime(config.musicVolume * 0.7, outroFadeOutStart);
+      musicOutroGain.gain.linearRampToValueAtTime(0, outroFadeOutEnd);
+      
+      // Start outro music
+      musicOutroSource.start(outroFadeInStart);
+    }
+
+    // Start sources
+    musicIntroSource.start(0);
+    speechSource.start(speechStartTime);
+
     try {
       const renderedBuffer = await offlineContext.startRendering();
       
@@ -229,16 +288,47 @@ export class AudioMixer {
 
   private audioBufferToBlob(buffer: AudioBuffer): Blob {
     const numberOfChannels = buffer.numberOfChannels;
-    const length = buffer.length * numberOfChannels * 2;
-    const arrayBuffer = new ArrayBuffer(length);
+    const sampleRate = buffer.sampleRate;
+    const format = 1; // PCM
+    const bitDepth = 16;
+    
+    const bytesPerSample = bitDepth / 8;
+    const blockAlign = numberOfChannels * bytesPerSample;
+    const byteRate = sampleRate * blockAlign;
+    const dataSize = buffer.length * blockAlign;
+    const bufferSize = 44 + dataSize;
+    
+    const arrayBuffer = new ArrayBuffer(bufferSize);
     const view = new DataView(arrayBuffer);
     
-    let offset = 0;
+    // WAV header
+    const writeString = (offset: number, str: string) => {
+      for (let i = 0; i < str.length; i++) {
+        view.setUint8(offset + i, str.charCodeAt(i));
+      }
+    };
+    
+    writeString(0, 'RIFF');
+    view.setUint32(4, bufferSize - 8, true);
+    writeString(8, 'WAVE');
+    writeString(12, 'fmt ');
+    view.setUint32(16, 16, true);
+    view.setUint16(20, format, true);
+    view.setUint16(22, numberOfChannels, true);
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, byteRate, true);
+    view.setUint16(32, blockAlign, true);
+    view.setUint16(34, bitDepth, true);
+    writeString(36, 'data');
+    view.setUint32(40, dataSize, true);
+    
+    // Convert audio data
+    let offset = 44;
     for (let i = 0; i < buffer.length; i++) {
       for (let channel = 0; channel < numberOfChannels; channel++) {
         const sample = buffer.getChannelData(channel)[i];
-        const int16 = sample < 0 ? sample * 0x8000 : sample * 0x7FFF;
-        view.setInt16(offset, int16, true);
+        const intSample = sample < 0 ? sample * 0x8000 : sample * 0x7FFF;
+        view.setInt16(offset, intSample, true);
         offset += 2;
       }
     }

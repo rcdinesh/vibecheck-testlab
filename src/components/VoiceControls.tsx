@@ -48,7 +48,10 @@ const VoiceControls = ({
     fadeDuration: 7,
     fadeType: 'linear',
     musicVolume: 0.6,
-    speechVolume: 0.8
+    speechVolume: 0.8,
+    outroEnabled: true,
+    outroFadeInDuration: 10,
+    outroDuration: 8
   });
   const [audioMixer] = useState(() => new AudioMixer({
     onMusicEnd: () => console.log('Music ended'),
@@ -378,10 +381,19 @@ const VoiceControls = ({
                 <span className="text-sm font-medium text-voice-primary w-8">{musicConfig.fadeDuration}s</span>
               </div>
               
-              <div className="text-xs text-muted-foreground">
-                • Music plays for 15 seconds
-                • Fades over {musicConfig.fadeDuration} seconds as speech begins
-                • Stops completely when speech starts
+              <div className="flex items-center gap-3 mt-2">
+                <span className="text-sm text-muted-foreground w-20">Outro Music:</span>
+                <Switch
+                  checked={musicConfig.outroEnabled}
+                  onCheckedChange={(outroEnabled) => setMusicConfig(prev => ({ ...prev, outroEnabled }))}
+                />
+              </div>
+              
+              <div className="text-xs text-muted-foreground mt-2">
+                • Music intro: 15s full → {musicConfig.fadeDuration}s fade → speech only
+                {musicConfig.outroEnabled && (
+                  <> • Music outro: fades in last 10s of speech → plays 8s after speech ends</>
+                )}
               </div>
             </div>
           )}
