@@ -99,11 +99,14 @@ const VoiceControls = ({
       // Create mixed or speech-only audio
       if (musicConfig.enabled && audioMixer.isSupported()) {
         try {
-          // Create a properly mixed audio file with music intro
-          const mixedBlob = await createMixedAudioBlob(audioData, musicConfig);
-          setMixedAudioBlob(mixedBlob);
-          const mixedUrl = URL.createObjectURL(mixedBlob);
+          // Use AudioMixer to create mixed audio with intro and outro
+          const { mixedUrl, cleanup } = await audioMixer.mixWithSpeech(audioData, musicConfig);
           setAudioUrl(mixedUrl);
+          
+          // Convert URL back to blob for download
+          const response = await fetch(mixedUrl);
+          const mixedBlob = await response.blob();
+          setMixedAudioBlob(mixedBlob);
         } catch (error) {
           console.error('Failed to create mixed audio:', error);
           // Fallback to speech-only
