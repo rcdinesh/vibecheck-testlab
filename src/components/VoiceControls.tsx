@@ -54,11 +54,16 @@ const VoiceControls = ({
     outroFadeInDuration: 10,
     outroDuration: 15
   });
-  const [audioMixer] = useState(() => new AudioMixer({
-    onMusicEnd: () => console.log('Music ended'),
-    onSpeechStart: () => console.log('Speech started'),
-    onMixComplete: () => setIsPlaying(false)
-  }));
+  const [audioMixer] = useState(() => {
+    const mixer = new AudioMixer({
+      onMusicEnd: () => console.log('Music ended'),
+      onSpeechStart: () => console.log('Speech started'),
+      onMixComplete: () => setIsPlaying(false)
+    });
+    console.log('AudioMixer instance created:', mixer);
+    console.log('loadIntroOutroFiles available:', typeof mixer.loadIntroOutroFiles);
+    return mixer;
+  });
   
   const { toast } = useToast();
 
