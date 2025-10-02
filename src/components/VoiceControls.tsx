@@ -45,7 +45,7 @@ const VoiceControls = ({
   // Music integration state
   const [musicConfig, setMusicConfig] = useState<MusicConfig>({
     enabled: true,
-    introDuration: 22,
+    introDuration: 25,
     fadeDuration: 7,
     fadeType: 'linear',
     musicVolume: 0.6,
@@ -273,7 +273,7 @@ const VoiceControls = ({
               </div>
               
               <div className="text-xs text-muted-foreground mt-2">
-                • Music intro: 22s full → {musicConfig.fadeDuration}s fade → speech only
+                • Music intro: 25s full → {musicConfig.fadeDuration}s fade → speech only
                 {musicConfig.outroEnabled && (
                   <> • Music outro: fades in last 10s of speech → plays 15s after speech ends</>
                 )}
