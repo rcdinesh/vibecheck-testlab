@@ -189,10 +189,10 @@ export class AudioMixer {
       
       // Outro music fade in (during last part of speech)
       musicOutroGain.gain.setValueAtTime(0, outroFadeInStart);
-      musicOutroGain.gain.linearRampToValueAtTime(config.musicVolume * 1.2, outroFadeInEnd); // Boost outro volume
+      musicOutroGain.gain.linearRampToValueAtTime(config.musicVolume * 1.5, outroFadeInEnd); // Increased outro volume
       
       // Hold at full volume for 10 seconds
-      musicOutroGain.gain.setValueAtTime(config.musicVolume * 1.2, outroFullVolumeEnd);
+      musicOutroGain.gain.setValueAtTime(config.musicVolume * 1.5, outroFullVolumeEnd);
       
       // Outro music fade out (remaining time)
       musicOutroGain.gain.linearRampToValueAtTime(0, outroFadeOutEnd);
