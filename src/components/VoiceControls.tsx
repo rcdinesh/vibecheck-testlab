@@ -12,7 +12,8 @@ import { VibeVoiceTTS, VIBEVOICE_PRESETS, VibeVoicePreset } from "@/utils/textTo
 import { AudioMixer, MusicConfig } from "@/utils/AudioMixer";
 import { useToast } from "@/components/ui/use-toast";
 import AudioPlayer from "./AudioPlayer";
-import kidcastTheme from "@/assets/kidcast-theme.mp3";
+import kidcastIntro from "@/assets/kidcast-intro.wav";
+import kidcastOutro from "@/assets/kidcast-outro.wav";
 
 interface VoiceControlsProps {
   onTextChange?: (text: string) => void;
@@ -84,9 +85,9 @@ const VoiceControls = ({
     try {
       setIsSynthesizing(true);
       
-      // Load music file if music is enabled
+      // Load intro/outro files if music is enabled
       if (musicConfig.enabled && audioMixer.isSupported()) {
-        await audioMixer.loadMusicFile(kidcastTheme);
+        await audioMixer.loadIntroOutroFiles(kidcastIntro, kidcastOutro);
       }
       
       const settings = {
@@ -202,133 +203,6 @@ const VoiceControls = ({
     return new Blob([byteArray], { type: 'audio/mp3' });
   };
 
-  const createMixedAudioBlob = async (speechBase64: string, config: MusicConfig): Promise<Blob> => {
-    // Load music file
-    const musicResponse = await fetch(kidcastTheme);
-    const musicArrayBuffer = await musicResponse.arrayBuffer();
-    
-    // Convert speech to array buffer
-    const speechBlob = base64ToBlob(speechBase64);
-    const speechArrayBuffer = await speechBlob.arrayBuffer();
-    
-    // Create audio context for mixing
-    const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-    
-    // Decode audio data
-    const [musicBuffer, speechBuffer] = await Promise.all([
-      audioContext.decodeAudioData(musicArrayBuffer.slice(0)),
-      audioContext.decodeAudioData(speechArrayBuffer.slice(0))
-    ]);
-    
-    // Calculate timing
-    const musicIntroLength = config.introDuration;
-    const fadeLength = config.fadeDuration;
-    const totalLength = musicIntroLength + fadeLength + speechBuffer.duration;
-    
-    // Create offline context for rendering
-    const offlineContext = new OfflineAudioContext(
-      2, // stereo
-      Math.ceil(totalLength * audioContext.sampleRate),
-      audioContext.sampleRate
-    );
-    
-    // Create music source
-    const musicSource = offlineContext.createBufferSource();
-    musicSource.buffer = musicBuffer;
-    
-    // Create speech source
-    const speechSource = offlineContext.createBufferSource();
-    speechSource.buffer = speechBuffer;
-    
-    // Create gain nodes
-    const musicGain = offlineContext.createGain();
-    const speechGain = offlineContext.createGain();
-    const masterGain = offlineContext.createGain();
-    
-    // Connect audio graph
-    musicSource.connect(musicGain);
-    speechSource.connect(speechGain);
-    musicGain.connect(masterGain);
-    speechGain.connect(masterGain);
-    masterGain.connect(offlineContext.destination);
-    
-    // Set initial volumes
-    musicGain.gain.setValueAtTime(config.musicVolume, 0);
-    speechGain.gain.setValueAtTime(0, 0);
-    
-    // Schedule music fade
-    const fadeStartTime = musicIntroLength;
-    const fadeEndTime = fadeStartTime + fadeLength;
-    const speechStartTime = fadeStartTime + (fadeLength / 2);
-    
-    // Music fade out
-    musicGain.gain.setValueAtTime(config.musicVolume, fadeStartTime);
-    musicGain.gain.linearRampToValueAtTime(0, fadeEndTime);
-    
-    // Speech fade in
-    speechGain.gain.setValueAtTime(0, speechStartTime);
-    speechGain.gain.linearRampToValueAtTime(config.speechVolume, speechStartTime + 1);
-    
-    // Start sources
-    musicSource.start(0);
-    speechSource.start(speechStartTime);
-    
-    // Render mixed audio
-    const renderedBuffer = await offlineContext.startRendering();
-    
-    // Convert to blob
-    return audioBufferToBlob(renderedBuffer);
-  };
-
-  const audioBufferToBlob = (buffer: AudioBuffer): Blob => {
-    const numberOfChannels = buffer.numberOfChannels;
-    const sampleRate = buffer.sampleRate;
-    const format = 1; // PCM
-    const bitDepth = 16;
-    
-    const bytesPerSample = bitDepth / 8;
-    const blockAlign = numberOfChannels * bytesPerSample;
-    const byteRate = sampleRate * blockAlign;
-    const dataSize = buffer.length * blockAlign;
-    const bufferSize = 44 + dataSize;
-    
-    const arrayBuffer = new ArrayBuffer(bufferSize);
-    const view = new DataView(arrayBuffer);
-    
-    // WAV header
-    const writeString = (offset: number, str: string) => {
-      for (let i = 0; i < str.length; i++) {
-        view.setUint8(offset + i, str.charCodeAt(i));
-      }
-    };
-    
-    writeString(0, 'RIFF');
-    view.setUint32(4, bufferSize - 8, true);
-    writeString(8, 'WAVE');
-    writeString(12, 'fmt ');
-    view.setUint32(16, 16, true);
-    view.setUint16(20, format, true);
-    view.setUint16(22, numberOfChannels, true);
-    view.setUint32(24, sampleRate, true);
-    view.setUint32(28, byteRate, true);
-    view.setUint16(32, blockAlign, true);
-    view.setUint16(34, bitDepth, true);
-    writeString(36, 'data');
-    view.setUint32(40, dataSize, true);
-    
-    // Convert audio data
-    let offset = 44;
-    for (let i = 0; i < buffer.length; i++) {
-      for (let channel = 0; channel < numberOfChannels; channel++) {
-        const sample = buffer.getChannelData(channel)[i];
-        const intSample = sample < 0 ? sample * 0x8000 : sample * 0x7FFF;
-        view.setInt16(offset, intSample, true);
-        offset += 2;
-      }
-    }
-    
-    return new Blob([arrayBuffer], { type: 'audio/wav' });
-  };
 
   const handleTextChange = (value: string) => {
     setText(value);

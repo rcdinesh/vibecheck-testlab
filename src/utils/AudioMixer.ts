@@ -1,13 +1,15 @@
 interface MusicConfig {
   enabled: boolean;
-  introDuration: number;     // 15 seconds
-  fadeDuration: number;      // 5-10 seconds
+  introDuration: number;     // full intro play duration
+  fadeDuration: number;      // fade duration
   fadeType: 'linear' | 'exponential';
   musicVolume: number;       // 0-1
   speechVolume: number;      // 0-1
   outroEnabled: boolean;
   outroFadeInDuration: number; // fade in during last X seconds of speech
   outroDuration: number; // play for X seconds after speech ends
+  introUrl?: string; // separate intro file
+  outroUrl?: string; // separate outro file
 }
 
 interface AudioMixerOptions {
@@ -18,7 +20,9 @@ interface AudioMixerOptions {
 
 export class AudioMixer {
   private audioContext: AudioContext | null = null;
-  private musicBuffer: AudioBuffer | null = null;
+  private introBuffer: AudioBuffer | null = null;
+  private outroBuffer: AudioBuffer | null = null;
+  private musicBuffer: AudioBuffer | null = null; // fallback for old single-file approach
   private musicSource: AudioBufferSourceNode | null = null;
   private musicGain: GainNode | null = null;
   private speechAudio: HTMLAudioElement | null = null;
@@ -54,11 +58,37 @@ export class AudioMixer {
     }
   }
 
+  async loadIntroOutroFiles(introUrl: string, outroUrl: string): Promise<void> {
+    if (!this.audioContext) {
+      await this.initialize();
+    }
+
+    try {
+      const [introResponse, outroResponse] = await Promise.all([
+        fetch(introUrl),
+        fetch(outroUrl)
+      ]);
+      
+      const [introArrayBuffer, outroArrayBuffer] = await Promise.all([
+        introResponse.arrayBuffer(),
+        outroResponse.arrayBuffer()
+      ]);
+      
+      [this.introBuffer, this.outroBuffer] = await Promise.all([
+        this.audioContext!.decodeAudioData(introArrayBuffer),
+        this.audioContext!.decodeAudioData(outroArrayBuffer)
+      ]);
+    } catch (error) {
+      console.error('Failed to load intro/outro files:', error);
+      throw new Error('Failed to load intro/outro files');
+    }
+  }
+
   async mixWithSpeech(
     speechAudioData: string, 
     config: MusicConfig
   ): Promise<{ mixedUrl: string; cleanup: () => void }> {
-    if (!config.enabled || !this.musicBuffer) {
+    if (!config.enabled || (!this.introBuffer && !this.musicBuffer)) {
       // Return speech-only if music disabled
       return this.createSpeechOnlyUrl(speechAudioData);
     }
@@ -93,15 +123,19 @@ export class AudioMixer {
     const speechArrayBuffer = await speechBlob.arrayBuffer();
     const speechBuffer = await offlineContext.decodeAudioData(speechArrayBuffer);
     
+    // Use separate intro/outro buffers if available, otherwise fall back to musicBuffer
+    const introBufferToUse = this.introBuffer || this.musicBuffer;
+    const outroBufferToUse = this.outroBuffer || this.musicBuffer;
+    
     // Create music sources (intro and outro)
     const musicIntroSource = offlineContext.createBufferSource();
-    musicIntroSource.buffer = this.musicBuffer;
-    musicIntroSource.loop = true;
+    musicIntroSource.buffer = introBufferToUse;
+    musicIntroSource.loop = false; // Don't loop when using separate files
     
     const musicOutroSource = config.outroEnabled ? offlineContext.createBufferSource() : null;
     if (musicOutroSource) {
-      musicOutroSource.buffer = this.musicBuffer;
-      musicOutroSource.loop = true;
+      musicOutroSource.buffer = outroBufferToUse;
+      musicOutroSource.loop = false; // Don't loop when using separate files
     }
     
     // Create speech source
