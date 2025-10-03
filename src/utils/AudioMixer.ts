@@ -102,7 +102,7 @@ export class AudioMixer {
     const speechDuration = speechBufferForDuration.duration;
 
     // Create offline context for mixing with accurate timing
-    const totalDuration = config.introDuration + config.fadeDuration + speechDuration + (config.outroEnabled ? config.outroDuration : 0);
+    const totalDuration = config.introDuration + config.fadeDuration + speechDuration + (config.outroEnabled ? config.outroDuration : 0) + 0.5; // padding to avoid cutoff
     const offlineContext = new OfflineAudioContext(
       2, // stereo
       Math.ceil(totalDuration * this.audioContext!.sampleRate),
@@ -135,7 +135,7 @@ export class AudioMixer {
     const musicOutroSource = config.outroEnabled ? offlineContext.createBufferSource() : null;
     if (musicOutroSource) {
       musicOutroSource.buffer = outroBufferToUse;
-      musicOutroSource.loop = false; // Don't loop when using separate files
+      musicOutroSource.loop = true; // Loop to ensure full 25s playback and fade
     }
     
     // Create speech source
