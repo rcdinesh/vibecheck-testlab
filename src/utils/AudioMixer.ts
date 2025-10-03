@@ -135,7 +135,7 @@ export class AudioMixer {
     const musicOutroSource = config.outroEnabled ? offlineContext.createBufferSource() : null;
     if (musicOutroSource) {
       musicOutroSource.buffer = outroBufferToUse;
-      musicOutroSource.loop = true; // Loop to ensure full 25s playback and fade
+      musicOutroSource.loop = false;
     }
     
     // Create speech source
