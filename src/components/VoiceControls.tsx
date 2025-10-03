@@ -275,7 +275,7 @@ const VoiceControls = ({
               <div className="text-xs text-muted-foreground mt-2">
                 • Music intro: 25s full → {musicConfig.fadeDuration}s fade → speech only
                 {musicConfig.outroEnabled && (
-                  <> • Music outro: fades in last 10s of speech → plays 15s after speech ends</>
+                  <> • Music outro: fades in last 10s of speech → plays 25s after speech ends (fade out last 5s)</>
                 )}
               </div>
             </div>
