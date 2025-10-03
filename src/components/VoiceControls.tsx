@@ -13,7 +13,7 @@ import { AudioMixer, MusicConfig } from "@/utils/AudioMixer";
 import { useToast } from "@/components/ui/use-toast";
 import AudioPlayer from "./AudioPlayer";
 import kidcastIntro from "@/assets/kidcast-intro.wav";
-import kidcastOutro from "@/assets/kidcast-outro.wav";
+import kidcastOutro from "@/assets/kidcast-outro-extended.m4a";
 
 interface VoiceControlsProps {
   onTextChange?: (text: string) => void;
@@ -307,8 +307,8 @@ const VoiceControls = ({
                       value={[musicConfig.outroDuration]}
                       onValueChange={(value) => setMusicConfig(prev => ({ ...prev, outroDuration: value[0] }))}
                       min={5}
-                      max={60}
-                      step={1}
+                      max={120}
+                      step={5}
                       className="flex-1"
                     />
                     <span className="text-sm font-medium text-voice-primary w-8">{musicConfig.outroDuration}s</span>
