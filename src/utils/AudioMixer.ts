@@ -184,7 +184,7 @@ export class AudioMixer {
     if (config.outroEnabled && musicOutroGain && musicOutroSource) {
       const outroFadeInStart = Math.max(0, speechEndTime - config.outroFadeInDuration);
       const outroFadeInEnd = speechEndTime;
-      const outroFullVolumeEnd = speechEndTime + 10; // Play at full volume for 10 seconds
+      const outroFullVolumeEnd = speechEndTime + 25; // Play at full volume for 25 seconds
       const outroFadeOutEnd = speechEndTime + config.outroDuration;
       
       // Outro music fade in (during last part of speech)
