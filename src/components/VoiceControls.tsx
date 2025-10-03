@@ -52,7 +52,7 @@ const VoiceControls = ({
     speechVolume: 0.8,
     outroEnabled: true,
     outroFadeInDuration: 10,
-    outroDuration: 25
+    outroDuration: 20
   });
   const [audioMixer] = useState(() => {
     const mixer = new AudioMixer({
@@ -275,7 +275,7 @@ const VoiceControls = ({
               <div className="text-xs text-muted-foreground mt-2">
                 • Music intro: 25s full → {musicConfig.fadeDuration}s fade → speech only
                 {musicConfig.outroEnabled && (
-                  <> • Music outro: fades in last 10s of speech → plays 25s after speech ends (fade out last 5s)</>
+                  <> • Music outro: fades in last 10s of speech → plays 20s after speech ends (fade out last 5s)</>
                 )}
               </div>
             </div>

@@ -184,8 +184,8 @@ export class AudioMixer {
     if (config.outroEnabled && musicOutroGain && musicOutroSource) {
       const outroFadeInStart = speechEndTime - 10; // 10 seconds overlay with speech
       const outroFadeInEnd = speechEndTime;
-      const outroFullVolumeEnd = speechEndTime + 20; // Full volume for 20 seconds (25 total - 5 fade)
-      const outroFadeOutEnd = speechEndTime + 25; // Fade out last 5 seconds
+      const outroFullVolumeEnd = speechEndTime + 15; // Full volume for 15 seconds (20 total - 5 fade)
+      const outroFadeOutEnd = speechEndTime + 20; // Fade out last 5 seconds
       
       // Outro music fade in (during last 10 seconds of speech)
       musicOutroGain.gain.setValueAtTime(0, outroFadeInStart);
