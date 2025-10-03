@@ -1,13 +1,14 @@
 interface MusicConfig {
   enabled: boolean;
   introDuration: number;     // full intro play duration
-  fadeDuration: number;      // fade duration
+  introFadeDuration: number; // intro fade out duration
   fadeType: 'linear' | 'exponential';
   musicVolume: number;       // 0-1
   speechVolume: number;      // 0-1
   outroEnabled: boolean;
   outroFadeInDuration: number; // fade in during last X seconds of speech
   outroDuration: number; // play for X seconds after speech ends
+  outroFadeOutDuration: number; // fade out duration for outro
   introUrl?: string; // separate intro file
   outroUrl?: string; // separate outro file
 }
@@ -102,7 +103,7 @@ export class AudioMixer {
     const speechDuration = speechBufferForDuration.duration;
 
     // Create offline context for mixing with accurate timing
-    const totalDuration = config.introDuration + config.fadeDuration + speechDuration + (config.outroEnabled ? config.outroDuration : 0) + 0.5; // padding to avoid cutoff
+    const totalDuration = config.introDuration + config.introFadeDuration + speechDuration + (config.outroEnabled ? config.outroDuration : 0) + 0.5; // padding to avoid cutoff
     const offlineContext = new OfflineAudioContext(
       2, // stereo
       Math.ceil(totalDuration * this.audioContext!.sampleRate),
@@ -161,8 +162,8 @@ export class AudioMixer {
 
     // Calculate timing
     const fadeStartTime = config.introDuration;
-    const fadeEndTime = fadeStartTime + config.fadeDuration;
-    const speechStartTime = fadeStartTime + (config.fadeDuration / 2);
+    const fadeEndTime = fadeStartTime + config.introFadeDuration;
+    const speechStartTime = fadeStartTime + (config.introFadeDuration / 2);
     const speechEndTime = speechStartTime + speechDuration;
 
     // Set initial volumes
@@ -182,10 +183,10 @@ export class AudioMixer {
 
     // Outro music scheduling
     if (config.outroEnabled && musicOutroGain && musicOutroSource) {
-      const outroFadeInStart = speechEndTime - 10; // 10 seconds overlay with speech
+      const outroFadeInStart = speechEndTime - config.outroFadeInDuration;
       const outroFadeInEnd = speechEndTime;
-      const outroFullVolumeEnd = speechEndTime + 15; // Full volume for 15 seconds (20 total - 5 fade)
-      const outroFadeOutEnd = speechEndTime + 20; // Fade out last 5 seconds
+      const outroFullVolumeEnd = speechEndTime + (config.outroDuration - config.outroFadeOutDuration);
+      const outroFadeOutEnd = speechEndTime + config.outroDuration;
       
       // Outro music fade in (during last 10 seconds of speech)
       musicOutroGain.gain.setValueAtTime(0, outroFadeInStart);
@@ -261,7 +262,7 @@ export class AudioMixer {
     if (!this.musicGain || !this.audioContext) return;
     
     const currentTime = this.audioContext.currentTime;
-    const fadeEndTime = currentTime + config.fadeDuration;
+    const fadeEndTime = currentTime + config.introFadeDuration;
     
     // Start music fade
     if (config.fadeType === 'exponential') {
@@ -274,13 +275,13 @@ export class AudioMixer {
     setTimeout(() => {
       this.playSpeechOnly(speechAudioData);
       this.options.onSpeechStart?.();
-    }, (config.fadeDuration / 2) * 1000);
+    }, (config.introFadeDuration / 2) * 1000);
     
     // Stop music completely after fade
     setTimeout(() => {
       this.stopMusic();
       this.options.onMusicEnd?.();
-    }, config.fadeDuration * 1000);
+    }, config.introFadeDuration * 1000);
   }
 
   private playSpeechOnly(speechAudioData: string): void {

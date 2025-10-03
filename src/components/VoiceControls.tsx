@@ -46,13 +46,14 @@ const VoiceControls = ({
   const [musicConfig, setMusicConfig] = useState<MusicConfig>({
     enabled: true,
     introDuration: 25,
-    fadeDuration: 7,
+    introFadeDuration: 3,
     fadeType: 'linear',
     musicVolume: 0.6,
     speechVolume: 0.8,
     outroEnabled: true,
     outroFadeInDuration: 10,
-    outroDuration: 20
+    outroDuration: 20,
+    outroFadeOutDuration: 5
   });
   const [audioMixer] = useState(() => {
     const mixer = new AudioMixer({
@@ -252,16 +253,29 @@ const VoiceControls = ({
           {musicConfig.enabled && (
             <div className="space-y-3">
               <div className="flex items-center gap-3">
-                <span className="text-sm text-muted-foreground w-20">Fade Duration:</span>
+                <span className="text-sm text-muted-foreground w-20">Intro Duration:</span>
                 <Slider
-                  value={[musicConfig.fadeDuration]}
-                  onValueChange={(value) => setMusicConfig(prev => ({ ...prev, fadeDuration: value[0] }))}
+                  value={[musicConfig.introDuration]}
+                  onValueChange={(value) => setMusicConfig(prev => ({ ...prev, introDuration: value[0] }))}
                   min={5}
-                  max={10}
+                  max={60}
                   step={1}
                   className="flex-1"
                 />
-                <span className="text-sm font-medium text-voice-primary w-8">{musicConfig.fadeDuration}s</span>
+                <span className="text-sm font-medium text-voice-primary w-8">{musicConfig.introDuration}s</span>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <span className="text-sm text-muted-foreground w-20">Intro Fade:</span>
+                <Slider
+                  value={[musicConfig.introFadeDuration]}
+                  onValueChange={(value) => setMusicConfig(prev => ({ ...prev, introFadeDuration: value[0] }))}
+                  min={1}
+                  max={10}
+                  step={0.5}
+                  className="flex-1"
+                />
+                <span className="text-sm font-medium text-voice-primary w-8">{musicConfig.introFadeDuration}s</span>
               </div>
               
               <div className="flex items-center gap-3 mt-2">
@@ -272,10 +286,53 @@ const VoiceControls = ({
                 />
               </div>
               
+              {musicConfig.outroEnabled && (
+                <>
+                  <div className="flex items-center gap-3">
+                    <span className="text-sm text-muted-foreground w-20">Outro Fade In:</span>
+                    <Slider
+                      value={[musicConfig.outroFadeInDuration]}
+                      onValueChange={(value) => setMusicConfig(prev => ({ ...prev, outroFadeInDuration: value[0] }))}
+                      min={1}
+                      max={20}
+                      step={1}
+                      className="flex-1"
+                    />
+                    <span className="text-sm font-medium text-voice-primary w-8">{musicConfig.outroFadeInDuration}s</span>
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    <span className="text-sm text-muted-foreground w-20">Outro Duration:</span>
+                    <Slider
+                      value={[musicConfig.outroDuration]}
+                      onValueChange={(value) => setMusicConfig(prev => ({ ...prev, outroDuration: value[0] }))}
+                      min={5}
+                      max={60}
+                      step={1}
+                      className="flex-1"
+                    />
+                    <span className="text-sm font-medium text-voice-primary w-8">{musicConfig.outroDuration}s</span>
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    <span className="text-sm text-muted-foreground w-20">Outro Fade Out:</span>
+                    <Slider
+                      value={[musicConfig.outroFadeOutDuration]}
+                      onValueChange={(value) => setMusicConfig(prev => ({ ...prev, outroFadeOutDuration: value[0] }))}
+                      min={1}
+                      max={15}
+                      step={0.5}
+                      className="flex-1"
+                    />
+                    <span className="text-sm font-medium text-voice-primary w-8">{musicConfig.outroFadeOutDuration}s</span>
+                  </div>
+                </>
+              )}
+              
               <div className="text-xs text-muted-foreground mt-2">
-                • Music intro: 25s full → {musicConfig.fadeDuration}s fade → speech only
+                • Music intro: {musicConfig.introDuration}s full → {musicConfig.introFadeDuration}s fade → speech only
                 {musicConfig.outroEnabled && (
-                  <> • Music outro: fades in last 10s of speech → plays 20s after speech ends (fade out last 5s)</>
+                  <> • Music outro: fades in last {musicConfig.outroFadeInDuration}s of speech → plays {musicConfig.outroDuration}s after speech ends (fade out last {musicConfig.outroFadeOutDuration}s)</>
                 )}
               </div>
             </div>
