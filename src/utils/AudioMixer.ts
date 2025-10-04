@@ -140,8 +140,39 @@ export class AudioMixer {
     const speechBuffer = await offlineContext.decodeAudioData(speechArrayBuffer);
     
     // Use separate intro/outro buffers if available, otherwise fall back to musicBuffer
-    const introBufferToUse = this.introBuffer || this.musicBuffer;
-    const outroBufferToUse = this.outroBuffer || this.musicBuffer;
+    const introSrcBuffer = this.introBuffer || this.musicBuffer;
+    const outroSrcBuffer = this.outroBuffer || this.musicBuffer;
+    
+    if (!introSrcBuffer) {
+      throw new Error('Intro audio buffer not loaded');
+    }
+    if (config.outroEnabled && !outroSrcBuffer) {
+      throw new Error('Outro audio buffer not loaded');
+    }
+    
+    // Recreate buffers in the OfflineAudioContext to avoid cross-context issues
+    const introBufferToUse = offlineContext.createBuffer(
+      introSrcBuffer.numberOfChannels,
+      introSrcBuffer.length,
+      offlineContext.sampleRate
+    );
+    for (let ch = 0; ch < introSrcBuffer.numberOfChannels; ch++) {
+      introBufferToUse.getChannelData(ch).set(introSrcBuffer.getChannelData(ch));
+    }
+    
+    const outroBufferToUse = config.outroEnabled && outroSrcBuffer
+      ? (() => {
+          const b = offlineContext.createBuffer(
+            outroSrcBuffer.numberOfChannels,
+            outroSrcBuffer.length,
+            offlineContext.sampleRate
+          );
+          for (let ch = 0; ch < outroSrcBuffer.numberOfChannels; ch++) {
+            b.getChannelData(ch).set(outroSrcBuffer.getChannelData(ch));
+          }
+          return b;
+        })()
+      : null;
     
     // Create music sources (intro and outro)
     const musicIntroSource = offlineContext.createBufferSource();
@@ -149,7 +180,7 @@ export class AudioMixer {
     musicIntroSource.loop = false; // Don't loop when using separate files
     
     const musicOutroSource = config.outroEnabled ? offlineContext.createBufferSource() : null;
-    if (musicOutroSource) {
+    if (musicOutroSource && outroBufferToUse) {
       musicOutroSource.buffer = outroBufferToUse;
       musicOutroSource.loop = false;
     }
