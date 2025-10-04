@@ -23,6 +23,8 @@ export class AudioMixer {
   private audioContext: AudioContext | null = null;
   private introBuffer: AudioBuffer | null = null;
   private outroBuffer: AudioBuffer | null = null;
+  private introArrayBuffer: ArrayBuffer | null = null; // raw bytes for offline decode
+  private outroArrayBuffer: ArrayBuffer | null = null; // raw bytes for offline decode
   private musicBuffer: AudioBuffer | null = null; // fallback for old single-file approach
   private musicSource: AudioBufferSourceNode | null = null;
   private musicGain: GainNode | null = null;
@@ -84,10 +86,14 @@ export class AudioMixer {
         outroResponse.arrayBuffer()
       ]);
       
+      // Save raw arrays for later offline decoding
+      this.introArrayBuffer = introArrayBuffer.slice(0);
+      this.outroArrayBuffer = outroArrayBuffer.slice(0);
+      
       console.log('Decoding audio buffers...');
       [this.introBuffer, this.outroBuffer] = await Promise.all([
-        this.audioContext!.decodeAudioData(introArrayBuffer),
-        this.audioContext!.decodeAudioData(outroArrayBuffer)
+        this.audioContext!.decodeAudioData(introArrayBuffer.slice(0)),
+        this.audioContext!.decodeAudioData(outroArrayBuffer.slice(0))
       ]);
       
       console.log('Successfully loaded intro/outro:', {
@@ -139,47 +145,57 @@ export class AudioMixer {
     const speechArrayBuffer = await speechBlob.arrayBuffer();
     const speechBuffer = await offlineContext.decodeAudioData(speechArrayBuffer);
     
-    // Use separate intro/outro buffers if available, otherwise fall back to musicBuffer
-    const introSrcBuffer = this.introBuffer || this.musicBuffer;
-    const outroSrcBuffer = this.outroBuffer || this.musicBuffer;
-    
-    if (!introSrcBuffer) {
+    // Prepare intro/outro buffers inside the OfflineAudioContext
+    let introBufferToUse: AudioBuffer;
+    let outroBufferToUse: AudioBuffer | null = null;
+
+    if (this.introArrayBuffer) {
+      introBufferToUse = await offlineContext.decodeAudioData(this.introArrayBuffer.slice(0));
+    } else if (this.introBuffer) {
+      // Fallback: copy from realtime context buffer
+      const src = this.introBuffer;
+      const b = offlineContext.createBuffer(src.numberOfChannels, src.length, offlineContext.sampleRate);
+      for (let ch = 0; ch < src.numberOfChannels; ch++) {
+        b.getChannelData(ch).set(src.getChannelData(ch));
+      }
+      introBufferToUse = b;
+    } else if (this.musicBuffer) {
+      const src = this.musicBuffer;
+      const b = offlineContext.createBuffer(src.numberOfChannels, src.length, offlineContext.sampleRate);
+      for (let ch = 0; ch < src.numberOfChannels; ch++) {
+        b.getChannelData(ch).set(src.getChannelData(ch));
+      }
+      introBufferToUse = b;
+    } else {
       throw new Error('Intro audio buffer not loaded');
     }
-    if (config.outroEnabled && !outroSrcBuffer) {
-      throw new Error('Outro audio buffer not loaded');
+
+    if (config.outroEnabled) {
+      if (this.outroArrayBuffer) {
+        outroBufferToUse = await offlineContext.decodeAudioData(this.outroArrayBuffer.slice(0));
+      } else if (this.outroBuffer) {
+        const src = this.outroBuffer;
+        const b = offlineContext.createBuffer(src.numberOfChannels, src.length, offlineContext.sampleRate);
+        for (let ch = 0; ch < src.numberOfChannels; ch++) {
+          b.getChannelData(ch).set(src.getChannelData(ch));
+        }
+        outroBufferToUse = b;
+      } else if (this.musicBuffer) {
+        const src = this.musicBuffer;
+        const b = offlineContext.createBuffer(src.numberOfChannels, src.length, offlineContext.sampleRate);
+        for (let ch = 0; ch < src.numberOfChannels; ch++) {
+          b.getChannelData(ch).set(src.getChannelData(ch));
+        }
+        outroBufferToUse = b;
+      }
     }
-    
-    // Recreate buffers in the OfflineAudioContext to avoid cross-context issues
-    const introBufferToUse = offlineContext.createBuffer(
-      introSrcBuffer.numberOfChannels,
-      introSrcBuffer.length,
-      offlineContext.sampleRate
-    );
-    for (let ch = 0; ch < introSrcBuffer.numberOfChannels; ch++) {
-      introBufferToUse.getChannelData(ch).set(introSrcBuffer.getChannelData(ch));
-    }
-    
-    const outroBufferToUse = config.outroEnabled && outroSrcBuffer
-      ? (() => {
-          const b = offlineContext.createBuffer(
-            outroSrcBuffer.numberOfChannels,
-            outroSrcBuffer.length,
-            offlineContext.sampleRate
-          );
-          for (let ch = 0; ch < outroSrcBuffer.numberOfChannels; ch++) {
-            b.getChannelData(ch).set(outroSrcBuffer.getChannelData(ch));
-          }
-          return b;
-        })()
-      : null;
     
     // Create music sources (intro and outro)
     const musicIntroSource = offlineContext.createBufferSource();
     musicIntroSource.buffer = introBufferToUse;
-    musicIntroSource.loop = false; // Don't loop when using separate files
+    musicIntroSource.loop = false; // No loop for separate intro
     
-    const musicOutroSource = config.outroEnabled ? offlineContext.createBufferSource() : null;
+    const musicOutroSource = config.outroEnabled && outroBufferToUse ? offlineContext.createBufferSource() : null;
     if (musicOutroSource && outroBufferToUse) {
       musicOutroSource.buffer = outroBufferToUse;
       musicOutroSource.loop = false;
@@ -207,10 +223,12 @@ export class AudioMixer {
     masterGain.connect(offlineContext.destination);
 
     // Calculate timing
-    const fadeStartTime = config.introDuration;
-    const fadeEndTime = fadeStartTime + config.introFadeDuration;
-    const speechStartTime = fadeStartTime + (config.introFadeDuration / 2);
-    const speechEndTime = speechStartTime + speechDuration;
+    const fadeStartTime = Math.max(0, config.introDuration);
+    const fadeEndTime = fadeStartTime + Math.max(0, config.introFadeDuration);
+    const speechStartTime = fadeStartTime + Math.max(0, config.introFadeDuration) / 2;
+    const speechEndTime = speechStartTime + Math.max(0.1, speechDuration);
+
+    console.log('[AudioMixer] timing', { fadeStartTime, fadeEndTime, speechStartTime, speechEndTime, config });
 
     // Set initial volumes
     musicIntroGain.gain.setValueAtTime(config.musicVolume, 0);
@@ -229,19 +247,22 @@ export class AudioMixer {
 
     // Outro music scheduling
     if (config.outroEnabled && musicOutroGain && musicOutroSource) {
-      const outroFadeInStart = speechEndTime - config.outroFadeInDuration;
+      let outroFadeInStart = speechEndTime - config.outroFadeInDuration;
       const outroFadeInEnd = speechEndTime;
       const outroFullVolumeEnd = speechEndTime + (config.outroDuration - config.outroFadeOutDuration);
       const outroFadeOutEnd = speechEndTime + config.outroDuration;
+
+      // Clamp to >= 0 for safety
+      if (outroFadeInStart < 0) outroFadeInStart = 0;
       
-      // Outro music fade in (during last 10 seconds of speech)
-      musicOutroGain.gain.setValueAtTime(0, outroFadeInStart);
-      musicOutroGain.gain.linearRampToValueAtTime(config.musicVolume * 1.5, outroFadeInEnd);
+      // Outro music fade in
+      musicOutroGain.gain.setValueAtTime(0, Math.max(0, outroFadeInStart));
+      musicOutroGain.gain.linearRampToValueAtTime(Math.min(1, config.musicVolume * 1.2), Math.max(outroFadeInStart, outroFadeInEnd));
       
-      // Hold at full volume for 20 seconds
-      musicOutroGain.gain.setValueAtTime(config.musicVolume * 1.5, outroFullVolumeEnd);
+      // Hold at full volume
+      musicOutroGain.gain.setValueAtTime(Math.min(1, config.musicVolume * 1.2), outroFullVolumeEnd);
       
-      // Outro music fade out (last 5 seconds)
+      // Fade out
       musicOutroGain.gain.linearRampToValueAtTime(0, outroFadeOutEnd);
       
       // Start outro music
