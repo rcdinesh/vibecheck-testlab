@@ -65,23 +65,38 @@ export class AudioMixer {
     }
 
     try {
+      console.log('Loading intro/outro files:', { introUrl, outroUrl });
+      
       const [introResponse, outroResponse] = await Promise.all([
-        fetch(introUrl),
-        fetch(outroUrl)
+        fetch(introUrl, { mode: 'cors' }),
+        fetch(outroUrl, { mode: 'cors' })
       ]);
+      
+      if (!introResponse.ok) {
+        throw new Error(`Failed to fetch intro: ${introResponse.status} ${introResponse.statusText}`);
+      }
+      if (!outroResponse.ok) {
+        throw new Error(`Failed to fetch outro: ${outroResponse.status} ${outroResponse.statusText}`);
+      }
       
       const [introArrayBuffer, outroArrayBuffer] = await Promise.all([
         introResponse.arrayBuffer(),
         outroResponse.arrayBuffer()
       ]);
       
+      console.log('Decoding audio buffers...');
       [this.introBuffer, this.outroBuffer] = await Promise.all([
         this.audioContext!.decodeAudioData(introArrayBuffer),
         this.audioContext!.decodeAudioData(outroArrayBuffer)
       ]);
+      
+      console.log('Successfully loaded intro/outro:', {
+        introDuration: this.introBuffer.duration,
+        outroDuration: this.outroBuffer.duration
+      });
     } catch (error) {
       console.error('Failed to load intro/outro files:', error);
-      throw new Error('Failed to load intro/outro files');
+      throw new Error(`Failed to load intro/outro files: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 
