@@ -51,7 +51,7 @@ const VoiceControls = ({
     musicVolume: 0.6,
     speechVolume: 0.8,
     outroEnabled: true,
-    outroFadeInDuration: 7,
+    outroFadeInDuration: 4,
     outroDuration: 15,
     outroFadeOutDuration: 4
   });
