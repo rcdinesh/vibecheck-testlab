@@ -109,7 +109,7 @@ export class AudioMixer {
   async mixWithSpeech(
     speechAudioData: string, 
     config: MusicConfig
-  ): Promise<{ mixedUrl: string; cleanup: () => void }> {
+  ): Promise<{ mixedUrl: string; mixedBlob: Blob; cleanup: () => void }> {
     if (!config.enabled || (!this.introBuffer && !this.musicBuffer)) {
       // Return speech-only if music disabled
       return this.createSpeechOnlyUrl(speechAudioData);
@@ -139,7 +139,7 @@ export class AudioMixer {
     speechAudioData: string,
     speechDuration: number,
     config: MusicConfig
-  ): Promise<{ mixedUrl: string; cleanup: () => void }> {
+  ): Promise<{ mixedUrl: string; mixedBlob: Blob; cleanup: () => void }> {
     // Create speech buffer
     const speechBlob = this.base64ToBlob(speechAudioData);
     const speechArrayBuffer = await speechBlob.arrayBuffer();
@@ -282,6 +282,7 @@ export class AudioMixer {
       
       return {
         mixedUrl,
+        mixedBlob: audioBlob,
         cleanup: () => {
           URL.revokeObjectURL(mixedUrl);
         }
@@ -365,12 +366,13 @@ export class AudioMixer {
     };
   }
 
-  private createSpeechOnlyUrl(speechAudioData: string): { mixedUrl: string; cleanup: () => void } {
+  private createSpeechOnlyUrl(speechAudioData: string): { mixedUrl: string; mixedBlob: Blob; cleanup: () => void } {
     const speechBlob = this.base64ToBlob(speechAudioData);
     const speechUrl = URL.createObjectURL(speechBlob);
     
     return {
       mixedUrl: speechUrl,
+      mixedBlob: speechBlob,
       cleanup: () => URL.revokeObjectURL(speechUrl)
     };
   }

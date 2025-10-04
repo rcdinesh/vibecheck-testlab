@@ -107,12 +107,8 @@ const VoiceControls = ({
       if (musicConfig.enabled && audioMixer.isSupported()) {
         try {
           // Use AudioMixer to create mixed audio with intro and outro
-          const { mixedUrl, cleanup } = await audioMixer.mixWithSpeech(audioData, musicConfig);
+          const { mixedUrl, mixedBlob } = await audioMixer.mixWithSpeech(audioData, musicConfig);
           setAudioUrl(mixedUrl);
-          
-          // Convert URL back to blob for download
-          const response = await fetch(mixedUrl);
-          const mixedBlob = await response.blob();
           setMixedAudioBlob(mixedBlob);
         } catch (error) {
           console.error('Failed to create mixed audio:', error);
