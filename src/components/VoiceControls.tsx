@@ -51,9 +51,9 @@ const VoiceControls = ({
     musicVolume: 0.6,
     speechVolume: 0.8,
     outroEnabled: true,
-    outroFadeInDuration: 10,
-    outroDuration: 20,
-    outroFadeOutDuration: 5
+    outroFadeInDuration: 7,
+    outroDuration: 15,
+    outroFadeOutDuration: 4
   });
   const [audioMixer] = useState(() => {
     const mixer = new AudioMixer({
