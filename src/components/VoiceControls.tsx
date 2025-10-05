@@ -14,7 +14,7 @@ import { useToast } from "@/components/ui/use-toast";
 import AudioPlayer from "./AudioPlayer";
 import kidcastIntro from "@/assets/kidcast-intro.wav";
 import kidcastOutro from "@/assets/kidcast-outro-extended.m4a";
-import countdownTimer from "@/assets/countdown-timer.wav";
+import countdownTimer from "@/assets/countdown-3sec.wav";
 
 interface VoiceControlsProps {
   onTextChange?: (text: string) => void;

@@ -559,8 +559,8 @@ export class AudioMixer {
   }
 
   private parseBreakTimings(text: string): Array<{ position: number; duration: number }> {
-    // Normalize plain <break> tags to default 3s so they get picked up
-    const normalizedText = text.replace(/<break\s*\/?>(?!\s*time=)/gi, '<break time="3s"/>' );
+    // Normalize plain <break> tags to default 4.5s so they get picked up
+    const normalizedText = text.replace(/<break\s*\/?>(?!\s*time=)/gi, '<break time="4.5s"/>' );
     const breakPattern = /<break\s+time=["'](\d+(?:\.\d+)?)(ms|s)["']\s*\/?>/gi;
     const timings: Array<{ position: number; duration: number }> = [];
     let cumulativeTime = 0;
