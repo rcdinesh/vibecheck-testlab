@@ -542,7 +542,7 @@ export class AudioMixer {
       const breakPlayDuration = Math.min(Math.max(0.25, breakTiming.duration), breakBuffer.duration);
       
       // Make it clearly audible and fade out at the end of the break window
-      const audibleGain = 1.0;
+      const audibleGain = 0.3; // Reduced volume for countdown timer
       const rampStart = Math.max(0, breakStartTime - 0.01);
       breakGain.gain.setValueAtTime(audibleGain, rampStart);
       breakGain.gain.linearRampToValueAtTime(0.0001, breakStartTime + breakPlayDuration);
