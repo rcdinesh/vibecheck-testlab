@@ -511,7 +511,17 @@ export class AudioMixer {
     // Parse SSML to find break times and calculate their positions
     const breakTimings = this.parseBreakTimings(originalText);
     
-    if (breakTimings.length === 0 || !this.breakSoundArrayBuffer) return;
+    if (!this.breakSoundArrayBuffer) {
+      console.warn('[AudioMixer] No break sound buffer available; skipping break sounds');
+      return;
+    }
+
+    if (breakTimings.length === 0) {
+      console.log('[AudioMixer] No <break> tags found; no countdown sounds will be added');
+      return;
+    }
+
+    console.log('[AudioMixer] Found break timings:', breakTimings);
 
     // Decode break sound buffer for offline context
     const breakBuffer = await offlineContext.decodeAudioData(this.breakSoundArrayBuffer.slice(0));
@@ -529,17 +539,22 @@ export class AudioMixer {
       
       // Start break sound at the calculated time (trim to break duration)
       const breakStartTime = speechStartTime + breakTiming.position;
-      const breakPlayDuration = Math.min(breakTiming.duration, breakBuffer.duration);
+      const breakPlayDuration = Math.min(Math.max(0.25, breakTiming.duration), breakBuffer.duration);
       
       // Make it clearly audible and fade out at the end of the break window
-      const audibleGain = 0.95;
-      breakGain.gain.setValueAtTime(audibleGain, breakStartTime);
-      breakGain.gain.linearRampToValueAtTime(0, breakStartTime + breakPlayDuration);
+      const audibleGain = 1.0;
+      const rampStart = Math.max(0, breakStartTime - 0.01);
+      breakGain.gain.setValueAtTime(audibleGain, rampStart);
+      breakGain.gain.linearRampToValueAtTime(0.0001, breakStartTime + breakPlayDuration);
       
       // Use the 3-arg start to limit playback length
-      breakSource.start(breakStartTime, 0, breakPlayDuration);
+      try {
+        breakSource.start(breakStartTime, 0, breakPlayDuration);
+      } catch (e) {
+        console.warn('[AudioMixer] Failed to schedule break sound start:', e);
+      }
       
-      console.log(`[AudioMixer] Break sound scheduled at ${breakStartTime}s (speech offset: ${breakTiming.position}s, duration: ${breakTiming.duration}s, playDuration: ${breakPlayDuration}s)`);
+      console.log(`[AudioMixer] Break sound scheduled at ${breakStartTime}s (speech offset: ${breakTiming.position}s, duration: ${breakTiming.duration}s, playDuration: ${breakPlayDuration}s, gain: ${audibleGain})`);
     }
   }
 
