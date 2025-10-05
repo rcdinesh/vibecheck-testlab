@@ -11,6 +11,8 @@ interface MusicConfig {
   outroFadeOutDuration: number; // fade out duration for outro
   introUrl?: string; // separate intro file
   outroUrl?: string; // separate outro file
+  breakSoundEnabled?: boolean; // enable countdown sound on breaks
+  breakSoundUrl?: string; // countdown timer sound
 }
 
 interface AudioMixerOptions {
@@ -25,6 +27,8 @@ export class AudioMixer {
   private outroBuffer: AudioBuffer | null = null;
   private introArrayBuffer: ArrayBuffer | null = null; // raw bytes for offline decode
   private outroArrayBuffer: ArrayBuffer | null = null; // raw bytes for offline decode
+  private breakSoundBuffer: AudioBuffer | null = null;
+  private breakSoundArrayBuffer: ArrayBuffer | null = null;
   private musicBuffer: AudioBuffer | null = null; // fallback for old single-file approach
   private musicSource: AudioBufferSourceNode | null = null;
   private musicGain: GainNode | null = null;
@@ -61,18 +65,25 @@ export class AudioMixer {
     }
   }
 
-  async loadIntroOutroFiles(introUrl: string, outroUrl: string): Promise<void> {
+  async loadIntroOutroFiles(introUrl: string, outroUrl: string, breakSoundUrl?: string): Promise<void> {
     if (!this.audioContext) {
       await this.initialize();
     }
 
     try {
-      console.log('Loading intro/outro files:', { introUrl, outroUrl });
+      console.log('Loading intro/outro files:', { introUrl, outroUrl, breakSoundUrl });
       
-      const [introResponse, outroResponse] = await Promise.all([
+      const fetchPromises = [
         fetch(introUrl, { mode: 'cors' }),
         fetch(outroUrl, { mode: 'cors' })
-      ]);
+      ];
+      
+      if (breakSoundUrl) {
+        fetchPromises.push(fetch(breakSoundUrl, { mode: 'cors' }));
+      }
+      
+      const responses = await Promise.all(fetchPromises);
+      const [introResponse, outroResponse, breakSoundResponse] = responses;
       
       if (!introResponse.ok) {
         throw new Error(`Failed to fetch intro: ${introResponse.status} ${introResponse.statusText}`);
@@ -81,24 +92,46 @@ export class AudioMixer {
         throw new Error(`Failed to fetch outro: ${outroResponse.status} ${outroResponse.statusText}`);
       }
       
-      const [introArrayBuffer, outroArrayBuffer] = await Promise.all([
+      const arrayBufferPromises = [
         introResponse.arrayBuffer(),
         outroResponse.arrayBuffer()
-      ]);
+      ];
+      
+      if (breakSoundResponse) {
+        arrayBufferPromises.push(breakSoundResponse.arrayBuffer());
+      }
+      
+      const arrayBuffers = await Promise.all(arrayBufferPromises);
+      const [introArrayBuffer, outroArrayBuffer, breakSoundArrayBuffer] = arrayBuffers;
       
       // Save raw arrays for later offline decoding
       this.introArrayBuffer = introArrayBuffer.slice(0);
       this.outroArrayBuffer = outroArrayBuffer.slice(0);
+      if (breakSoundArrayBuffer) {
+        this.breakSoundArrayBuffer = breakSoundArrayBuffer.slice(0);
+      }
       
       console.log('Decoding audio buffers...');
-      [this.introBuffer, this.outroBuffer] = await Promise.all([
+      const decodePromises = [
         this.audioContext!.decodeAudioData(introArrayBuffer.slice(0)),
         this.audioContext!.decodeAudioData(outroArrayBuffer.slice(0))
-      ]);
+      ];
+      
+      if (breakSoundArrayBuffer) {
+        decodePromises.push(this.audioContext!.decodeAudioData(breakSoundArrayBuffer.slice(0)));
+      }
+      
+      const decodedBuffers = await Promise.all(decodePromises);
+      this.introBuffer = decodedBuffers[0];
+      this.outroBuffer = decodedBuffers[1];
+      if (decodedBuffers[2]) {
+        this.breakSoundBuffer = decodedBuffers[2];
+      }
       
       console.log('Successfully loaded intro/outro:', {
         introDuration: this.introBuffer.duration,
-        outroDuration: this.outroBuffer.duration
+        outroDuration: this.outroBuffer.duration,
+        breakSoundDuration: this.breakSoundBuffer?.duration
       });
     } catch (error) {
       console.error('Failed to load intro/outro files:', error);
@@ -108,7 +141,8 @@ export class AudioMixer {
 
   async mixWithSpeech(
     speechAudioData: string, 
-    config: MusicConfig
+    config: MusicConfig,
+    originalText?: string
   ): Promise<{ mixedUrl: string; mixedBlob: Blob; cleanup: () => void }> {
     if (!config.enabled || (!this.introBuffer && !this.musicBuffer)) {
       // Return speech-only if music disabled
@@ -131,14 +165,15 @@ export class AudioMixer {
       this.audioContext!.sampleRate
     );
 
-    return this.createMixedAudioWithOutro(offlineContext, speechAudioData, speechDuration, config);
+    return this.createMixedAudioWithOutro(offlineContext, speechAudioData, speechDuration, config, originalText);
   }
 
   private async createMixedAudioWithOutro(
     offlineContext: OfflineAudioContext,
     speechAudioData: string,
     speechDuration: number,
-    config: MusicConfig
+    config: MusicConfig,
+    originalText?: string
   ): Promise<{ mixedUrl: string; mixedBlob: Blob; cleanup: () => void }> {
     // Create speech buffer
     const speechBlob = this.base64ToBlob(speechAudioData);
@@ -272,6 +307,11 @@ export class AudioMixer {
     // Start sources
     musicIntroSource.start(0);
     speechSource.start(speechStartTime);
+
+    // Add break sound effects if enabled
+    if (config.breakSoundEnabled && this.breakSoundArrayBuffer && originalText) {
+      await this.addBreakSounds(offlineContext, originalText, speechStartTime, masterGain);
+    }
 
     try {
       const renderedBuffer = await offlineContext.startRendering();
@@ -460,6 +500,72 @@ export class AudioMixer {
       this.speechAudio.currentTime = 0;
       this.speechAudio = null;
     }
+  }
+
+  private async addBreakSounds(
+    offlineContext: OfflineAudioContext,
+    originalText: string,
+    speechStartTime: number,
+    masterGain: GainNode
+  ): Promise<void> {
+    // Parse SSML to find break times and calculate their positions
+    const breakTimings = this.parseBreakTimings(originalText);
+    
+    if (breakTimings.length === 0 || !this.breakSoundArrayBuffer) return;
+
+    // Decode break sound buffer for offline context
+    const breakBuffer = await offlineContext.decodeAudioData(this.breakSoundArrayBuffer.slice(0));
+    
+    for (const breakTiming of breakTimings) {
+      const breakSource = offlineContext.createBufferSource();
+      breakSource.buffer = breakBuffer;
+      
+      const breakGain = offlineContext.createGain();
+      breakGain.gain.setValueAtTime(0.4, 0); // Lower volume for countdown
+      
+      breakSource.connect(breakGain);
+      breakGain.connect(masterGain);
+      
+      // Start break sound at the calculated time
+      const breakStartTime = speechStartTime + breakTiming.position;
+      breakSource.start(breakStartTime);
+      
+      console.log(`[AudioMixer] Break sound scheduled at ${breakStartTime}s (speech offset: ${breakTiming.position}s, duration: ${breakTiming.duration}s)`);
+    }
+  }
+
+  private parseBreakTimings(text: string): Array<{ position: number; duration: number }> {
+    const breakPattern = /<break\s+time=["'](\d+(?:\.\d+)?)(ms|s)["']\s*\/?>/gi;
+    const timings: Array<{ position: number; duration: number }> = [];
+    let cumulativeTime = 0;
+    let match;
+    
+    // Estimate speech rate: ~150 words per minute = ~2.5 words per second
+    const wordsPerSecond = 2.5;
+    
+    let lastIndex = 0;
+    while ((match = breakPattern.exec(text)) !== null) {
+      const breakValue = parseFloat(match[1]);
+      const breakUnit = match[2];
+      const breakDuration = breakUnit === 'ms' ? breakValue / 1000 : breakValue;
+      
+      // Calculate words spoken before this break
+      const textBeforeBreak = text.substring(lastIndex, match.index);
+      const wordsBefore = textBeforeBreak.trim().split(/\s+/).filter(w => w.length > 0 && !w.startsWith('<')).length;
+      const timeBeforeBreak = wordsBefore / wordsPerSecond;
+      
+      cumulativeTime += timeBeforeBreak;
+      
+      timings.push({
+        position: cumulativeTime,
+        duration: breakDuration
+      });
+      
+      cumulativeTime += breakDuration;
+      lastIndex = match.index + match[0].length;
+    }
+    
+    return timings;
   }
 
   isSupported(): boolean {

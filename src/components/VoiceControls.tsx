@@ -14,6 +14,7 @@ import { useToast } from "@/components/ui/use-toast";
 import AudioPlayer from "./AudioPlayer";
 import kidcastIntro from "@/assets/kidcast-intro.wav";
 import kidcastOutro from "@/assets/kidcast-outro-extended.m4a";
+import countdownTimer from "@/assets/countdown-timer.wav";
 
 interface VoiceControlsProps {
   onTextChange?: (text: string) => void;
@@ -53,7 +54,9 @@ const VoiceControls = ({
     outroEnabled: true,
     outroFadeInDuration: 4,
     outroDuration: 15,
-    outroFadeOutDuration: 4
+    outroFadeOutDuration: 4,
+    breakSoundEnabled: true,
+    breakSoundUrl: countdownTimer
   });
   const [audioMixer] = useState(() => {
     const mixer = new AudioMixer({
@@ -93,7 +96,8 @@ const VoiceControls = ({
       
       // Load intro/outro files if music is enabled
       if (musicConfig.enabled && audioMixer.isSupported()) {
-        await audioMixer.loadIntroOutroFiles(kidcastIntro, kidcastOutro);
+        const breakSound = musicConfig.breakSoundEnabled ? countdownTimer : undefined;
+        await audioMixer.loadIntroOutroFiles(kidcastIntro, kidcastOutro, breakSound);
       }
       
       const settings = {
@@ -107,7 +111,7 @@ const VoiceControls = ({
       if (musicConfig.enabled && audioMixer.isSupported()) {
         try {
           // Use AudioMixer to create mixed audio with intro and outro
-          const { mixedUrl, mixedBlob } = await audioMixer.mixWithSpeech(audioData, musicConfig);
+          const { mixedUrl, mixedBlob } = await audioMixer.mixWithSpeech(audioData, musicConfig, text);
           setAudioUrl(mixedUrl);
           setMixedAudioBlob(mixedBlob);
         } catch (error) {
@@ -275,6 +279,14 @@ const VoiceControls = ({
               </div>
               
               <div className="flex items-center gap-3 mt-2">
+                <span className="text-sm text-muted-foreground w-20">Break Timer:</span>
+                <Switch
+                  checked={musicConfig.breakSoundEnabled}
+                  onCheckedChange={(breakSoundEnabled) => setMusicConfig(prev => ({ ...prev, breakSoundEnabled }))}
+                />
+              </div>
+              
+              <div className="flex items-center gap-3 mt-2">
                 <span className="text-sm text-muted-foreground w-20">Outro Music:</span>
                 <Switch
                   checked={musicConfig.outroEnabled}
@@ -327,6 +339,9 @@ const VoiceControls = ({
               
               <div className="text-xs text-muted-foreground mt-2">
                 • Music intro: {musicConfig.introDuration}s full → {musicConfig.introFadeDuration}s fade → speech only
+                {musicConfig.breakSoundEnabled && (
+                  <> • Countdown timer plays during &lt;break&gt; tags</>
+                )}
                 {musicConfig.outroEnabled && (
                   <> • Music outro: fades in last {musicConfig.outroFadeInDuration}s of speech → plays {musicConfig.outroDuration}s after speech ends (fade out last {musicConfig.outroFadeOutDuration}s)</>
                 )}
