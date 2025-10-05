@@ -34,6 +34,9 @@ serve(async (req) => {
 
     console.log('Azure TTS request:', { text: text.substring(0, 100), voice, rate, pitch, volume, emotion, speaker_id });
 
+    // Fix plain <break> tags by adding default time attribute
+    const fixedText = text.replace(/<break\s*\/?>/gi, '<break time="3s"/>');
+
     // Map VibeVoice emotions to Azure Speech emotions
     const azureEmotions: Record<string, string> = {
       'natural': 'neutral',
@@ -57,7 +60,7 @@ serve(async (req) => {
         <voice name="${voice}">
           <mstts:express-as style="${azureEmotion}">
             <prosody rate="${rateStr}" pitch="${pitchStr}" volume="${Math.round(volume * 100)}%">
-              ${text}
+              ${fixedText}
             </prosody>
           </mstts:express-as>
         </voice>
