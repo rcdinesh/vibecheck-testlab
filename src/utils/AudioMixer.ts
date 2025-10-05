@@ -521,20 +521,31 @@ export class AudioMixer {
       breakSource.buffer = breakBuffer;
       
       const breakGain = offlineContext.createGain();
-      breakGain.gain.setValueAtTime(0.4, 0); // Lower volume for countdown
+      // Start silent, then bring up only during the break window
+      breakGain.gain.setValueAtTime(0, 0);
       
       breakSource.connect(breakGain);
       breakGain.connect(masterGain);
       
-      // Start break sound at the calculated time
+      // Start break sound at the calculated time (trim to break duration)
       const breakStartTime = speechStartTime + breakTiming.position;
-      breakSource.start(breakStartTime);
+      const breakPlayDuration = Math.min(breakTiming.duration, breakBuffer.duration);
       
-      console.log(`[AudioMixer] Break sound scheduled at ${breakStartTime}s (speech offset: ${breakTiming.position}s, duration: ${breakTiming.duration}s)`);
+      // Make it clearly audible and fade out at the end of the break window
+      const audibleGain = 0.95;
+      breakGain.gain.setValueAtTime(audibleGain, breakStartTime);
+      breakGain.gain.linearRampToValueAtTime(0, breakStartTime + breakPlayDuration);
+      
+      // Use the 3-arg start to limit playback length
+      breakSource.start(breakStartTime, 0, breakPlayDuration);
+      
+      console.log(`[AudioMixer] Break sound scheduled at ${breakStartTime}s (speech offset: ${breakTiming.position}s, duration: ${breakTiming.duration}s, playDuration: ${breakPlayDuration}s)`);
     }
   }
 
   private parseBreakTimings(text: string): Array<{ position: number; duration: number }> {
+    // Normalize plain <break> tags to default 3s so they get picked up
+    const normalizedText = text.replace(/<break\s*\/?>(?!\s*time=)/gi, '<break time="3s"/>' );
     const breakPattern = /<break\s+time=["'](\d+(?:\.\d+)?)(ms|s)["']\s*\/?>/gi;
     const timings: Array<{ position: number; duration: number }> = [];
     let cumulativeTime = 0;
@@ -544,14 +555,18 @@ export class AudioMixer {
     const wordsPerSecond = 2.5;
     
     let lastIndex = 0;
-    while ((match = breakPattern.exec(text)) !== null) {
+    while ((match = breakPattern.exec(normalizedText)) !== null) {
       const breakValue = parseFloat(match[1]);
       const breakUnit = match[2];
       const breakDuration = breakUnit === 'ms' ? breakValue / 1000 : breakValue;
       
-      // Calculate words spoken before this break
-      const textBeforeBreak = text.substring(lastIndex, match.index);
-      const wordsBefore = textBeforeBreak.trim().split(/\s+/).filter(w => w.length > 0 && !w.startsWith('<')).length;
+      // Calculate words spoken before this break (ignore tags)
+      const textBeforeBreak = normalizedText.substring(lastIndex, match.index);
+      const wordsBefore = textBeforeBreak
+        .replace(/<[^>]+>/g, ' ') // strip tags
+        .trim()
+        .split(/\s+/)
+        .filter(w => w.length > 0).length;
       const timeBeforeBreak = wordsBefore / wordsPerSecond;
       
       cumulativeTime += timeBeforeBreak;
