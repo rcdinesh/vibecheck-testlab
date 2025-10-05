@@ -340,7 +340,7 @@ const VoiceControls = ({
               <div className="text-xs text-muted-foreground mt-2">
                 • Music intro: {musicConfig.introDuration}s full → {musicConfig.introFadeDuration}s fade → speech only
                 {musicConfig.breakSoundEnabled && (
-                  <> • Countdown timer plays during &lt;break&gt; tags</>
+                  <> • Countdown timer plays during &lt;break&gt; tags (4.5s default)</>
                 )}
                 {musicConfig.outroEnabled && (
                   <> • Music outro: fades in last {musicConfig.outroFadeInDuration}s of speech → plays {musicConfig.outroDuration}s after speech ends (fade out last {musicConfig.outroFadeOutDuration}s)</>
