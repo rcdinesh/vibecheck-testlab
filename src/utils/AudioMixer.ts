@@ -310,7 +310,7 @@ export class AudioMixer {
 
     // Add break sound effects if enabled
     if (config.breakSoundEnabled && this.breakSoundArrayBuffer && originalText) {
-      await this.addBreakSounds(offlineContext, originalText, speechStartTime, masterGain);
+      await this.addBreakSounds(offlineContext, originalText, speechStartTime, masterGain, speechBuffer);
     }
 
     try {
@@ -506,10 +506,11 @@ export class AudioMixer {
     offlineContext: OfflineAudioContext,
     originalText: string,
     speechStartTime: number,
-    masterGain: GainNode
+    masterGain: GainNode,
+    speechBuffer?: AudioBuffer
   ): Promise<void> {
     // Parse SSML to find break times and calculate their positions
-    const breakTimings = this.parseBreakTimings(originalText);
+    const breakTimings = this.parseBreakTimings(originalText, speechBuffer);
     
     if (!this.breakSoundArrayBuffer) {
       console.warn('[AudioMixer] No break sound buffer available; skipping break sounds');
@@ -558,19 +559,40 @@ export class AudioMixer {
     }
   }
 
-  private parseBreakTimings(text: string): Array<{ position: number; duration: number }> {
+  private parseBreakTimings(text: string, speechBuffer?: AudioBuffer): Array<{ position: number; duration: number }> {
     // Normalize plain <break> tags to default 4.5s so they get picked up
     const normalizedText = text.replace(/<break\s*\/?>(?!\s*time=)/gi, '<break time="4.5s"/>' );
     const breakPattern = /<break\s+time=["'](\d+(?:\.\d+)?)(ms|s)["']\s*\/?>/gi;
     const timings: Array<{ position: number; duration: number }> = [];
-    let cumulativeTime = 0;
     let match;
     
-    // Estimate speech rate: ~150 words per minute = ~2.5 words per second
-    const wordsPerSecond = 2.5;
+    // Count total words and break durations to calculate actual speech rate
+    const allText = normalizedText.replace(/<[^>]+>/g, ' ').trim();
+    const totalWords = allText.split(/\s+/).filter(w => w.length > 0).length;
     
+    // Calculate total break time
+    let totalBreakTime = 0;
+    const breakMatches = [...normalizedText.matchAll(breakPattern)];
+    for (const m of breakMatches) {
+      const breakValue = parseFloat(m[1]);
+      const breakUnit = m[2];
+      totalBreakTime += breakUnit === 'ms' ? breakValue / 1000 : breakValue;
+    }
+    
+    // If we have the actual speech buffer, use it to calculate precise speech rate
+    let wordsPerSecond = 2.5; // fallback estimate
+    if (speechBuffer) {
+      const actualSpeechDuration = speechBuffer.duration - totalBreakTime;
+      if (actualSpeechDuration > 0 && totalWords > 0) {
+        wordsPerSecond = totalWords / actualSpeechDuration;
+        console.log(`[AudioMixer] Calculated speech rate: ${wordsPerSecond.toFixed(2)} words/sec (${totalWords} words in ${actualSpeechDuration.toFixed(1)}s)`);
+      }
+    }
+    
+    let cumulativeTime = 0;
     let lastIndex = 0;
-    while ((match = breakPattern.exec(normalizedText)) !== null) {
+    
+    for (const match of breakMatches) {
       const breakValue = parseFloat(match[1]);
       const breakUnit = match[2];
       const breakDuration = breakUnit === 'ms' ? breakValue / 1000 : breakValue;
@@ -578,7 +600,7 @@ export class AudioMixer {
       // Calculate words spoken before this break (ignore tags)
       const textBeforeBreak = normalizedText.substring(lastIndex, match.index);
       const wordsBefore = textBeforeBreak
-        .replace(/<[^>]+>/g, ' ') // strip tags
+        .replace(/<[^>]+>/g, ' ')
         .trim()
         .split(/\s+/)
         .filter(w => w.length > 0).length;
