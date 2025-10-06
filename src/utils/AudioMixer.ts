@@ -562,62 +562,170 @@ export class AudioMixer {
   private parseBreakTimings(text: string, speechBuffer?: AudioBuffer): Array<{ position: number; duration: number }> {
     // Normalize plain <break> tags to default 4.5s so they get picked up
     const normalizedText = text.replace(/<break\s*\/?>(?!\s*time=)/gi, '<break time="4.5s"/>' );
-    const breakPattern = /<break\s+time=["'](\d+(?:\.\d+)?)(ms|s)["']\s*\/?>/gi;
+    const breakPattern = /<break\s+time=["'](\d+(?:\.\d+)?)(ms|s)["']\s*\/?>(?)/gi;
     const timings: Array<{ position: number; duration: number }> = [];
     let match;
     
-    // Count total words and break durations to calculate actual speech rate
-    const allText = normalizedText.replace(/<[^>]+>/g, ' ').trim();
-    const totalWords = allText.split(/\s+/).filter(w => w.length > 0).length;
-    
-    // Calculate total break time
-    let totalBreakTime = 0;
+    // Extract expected breaks from SSML
     const breakMatches = [...normalizedText.matchAll(breakPattern)];
+    const expectedBreaks = breakMatches.map((m) => {
+      const breakValue = parseFloat(m[1]);
+      const breakUnit = m[2];
+      return breakUnit === 'ms' ? breakValue / 1000 : breakValue;
+    });
+
+    // Try precise alignment using detected silence in the actual TTS audio
+    if (speechBuffer) {
+      const silenceSegments = this.detectSilenceSegments(speechBuffer);
+      if (silenceSegments.length > 0 && expectedBreaks.length > 0) {
+        const used = new Set<number>();
+        for (const expected of expectedBreaks) {
+          let bestIndex = -1;
+          let bestScore = Number.POSITIVE_INFINITY;
+          for (let i = 0; i < silenceSegments.length; i++) {
+            if (used.has(i)) continue;
+            const seg = silenceSegments[i];
+            // Accept segments that are reasonably close and at least long enough
+            const longEnough = seg.duration >= Math.max(0.3, expected * 0.7);
+            if (!longEnough) continue;
+            const score = Math.abs(seg.duration - expected);
+            if (score < bestScore) {
+              bestScore = score;
+              bestIndex = i;
+            }
+          }
+          if (bestIndex !== -1) {
+            const seg = silenceSegments[bestIndex];
+            timings.push({ position: seg.start, duration: expected });
+            used.add(bestIndex);
+          }
+        }
+        if (timings.length === expectedBreaks.length) {
+          // Perfect match – return aligned to real silence starts
+          timings.sort((a, b) => a.position - b.position);
+          console.log('[AudioMixer] Using detected silence segments for break alignment:', timings);
+          return timings;
+        } else if (timings.length > 0) {
+          // Partial match – fall back to estimate for consistency
+          console.warn('[AudioMixer] Partial silence-break match; falling back to estimated timings.');
+          timings.length = 0;
+        }
+      }
+    }
+
+    // Fallback: estimate based on words-per-second using actual speech duration if available
+    const allText = normalizedText.replace(/<[^>]+>/g, ' ').trim();
+    const totalWords = allText.split(/\s+/).filter((w) => w.length > 0).length;
+
+    // Calculate total break time from expectedBreaks
+    const totalBreakTime = expectedBreaks.reduce((acc, d) => acc + d, 0);
+
+    let wordsPerSecond = 2.5; // conservative fallback
+    if (speechBuffer) {
+      const actualSpeechDuration = Math.max(0.1, speechBuffer.duration - totalBreakTime);
+      if (actualSpeechDuration > 0 && totalWords > 0) {
+        wordsPerSecond = totalWords / actualSpeechDuration;
+        console.log(
+          `[AudioMixer] Calculated speech rate: ${wordsPerSecond.toFixed(2)} words/sec (${totalWords} words in ${actualSpeechDuration.toFixed(1)}s)`
+        );
+      }
+    }
+
+    let cumulativeTime = 0;
+    let lastIndex = 0;
     for (const m of breakMatches) {
       const breakValue = parseFloat(m[1]);
       const breakUnit = m[2];
-      totalBreakTime += breakUnit === 'ms' ? breakValue / 1000 : breakValue;
-    }
-    
-    // If we have the actual speech buffer, use it to calculate precise speech rate
-    let wordsPerSecond = 2.5; // fallback estimate
-    if (speechBuffer) {
-      const actualSpeechDuration = speechBuffer.duration - totalBreakTime;
-      if (actualSpeechDuration > 0 && totalWords > 0) {
-        wordsPerSecond = totalWords / actualSpeechDuration;
-        console.log(`[AudioMixer] Calculated speech rate: ${wordsPerSecond.toFixed(2)} words/sec (${totalWords} words in ${actualSpeechDuration.toFixed(1)}s)`);
-      }
-    }
-    
-    let cumulativeTime = 0;
-    let lastIndex = 0;
-    
-    for (const match of breakMatches) {
-      const breakValue = parseFloat(match[1]);
-      const breakUnit = match[2];
       const breakDuration = breakUnit === 'ms' ? breakValue / 1000 : breakValue;
-      
-      // Calculate words spoken before this break (ignore tags)
-      const textBeforeBreak = normalizedText.substring(lastIndex, match.index);
+
+      const textBeforeBreak = normalizedText.substring(lastIndex, m.index as number);
       const wordsBefore = textBeforeBreak
         .replace(/<[^>]+>/g, ' ')
         .trim()
         .split(/\s+/)
-        .filter(w => w.length > 0).length;
+        .filter((w) => w.length > 0).length;
       const timeBeforeBreak = wordsBefore / wordsPerSecond;
-      
+
       cumulativeTime += timeBeforeBreak;
-      
-      timings.push({
-        position: cumulativeTime,
-        duration: breakDuration
-      });
-      
+      timings.push({ position: cumulativeTime, duration: breakDuration });
       cumulativeTime += breakDuration;
-      lastIndex = match.index + match[0].length;
+      lastIndex = (m.index as number) + m[0].length;
     }
-    
+
     return timings;
+  }
+
+  private detectSilenceSegments(buffer: AudioBuffer): Array<{ start: number; duration: number }> {
+    const sampleRate = buffer.sampleRate;
+    const length = buffer.length;
+    const channels = buffer.numberOfChannels;
+
+    // Mixdown to mono for simpler analysis
+    const mono = new Float32Array(length);
+    for (let ch = 0; ch < channels; ch++) {
+      const data = buffer.getChannelData(ch);
+      for (let i = 0; i < length; i++) {
+        mono[i] += data[i] / channels;
+      }
+    }
+
+    // Sliding-window average absolute amplitude
+    const step = Math.max(1, Math.floor(sampleRate * 0.01)); // 10ms
+    const win = Math.max(1, Math.floor(sampleRate * 0.05)); // 50ms
+    const threshold = 0.015; // amplitude threshold (~ -36 dB)
+    const minSilence = 0.4; // ignore tiny pauses
+
+    const segments: Array<{ start: number; duration: number }> = [];
+    let inSilence = false;
+    let startSample = 0;
+
+    for (let i = 0; i < length; i += step) {
+      let sum = 0;
+      let count = 0;
+      const s = i;
+      const e = Math.min(length, i + win);
+      for (let j = s; j < e; j++) {
+        sum += Math.abs(mono[j]);
+        count++;
+      }
+      const avg = sum / (count || 1);
+      const silent = avg < threshold;
+
+      if (silent && !inSilence) {
+        inSilence = true;
+        startSample = i;
+      } else if (!silent && inSilence) {
+        const dur = (i - startSample) / sampleRate;
+        if (dur >= minSilence) {
+          segments.push({ start: startSample / sampleRate, duration: dur });
+        }
+        inSilence = false;
+      }
+    }
+
+    // Close trailing segment
+    if (inSilence) {
+      const dur = (length - startSample) / sampleRate;
+      if (dur >= minSilence) {
+        segments.push({ start: startSample / sampleRate, duration: dur });
+      }
+    }
+
+    // Merge very close segments (e.g., tiny spikes)
+    segments.sort((a, b) => a.start - b.start);
+    const merged: Array<{ start: number; duration: number }> = [];
+    for (const seg of segments) {
+      const last = merged[merged.length - 1];
+      if (last && seg.start <= last.start + last.duration + 0.15) {
+        const newEnd = Math.max(last.start + last.duration, seg.start + seg.duration);
+        last.duration = newEnd - last.start;
+      } else {
+        merged.push({ ...seg });
+      }
+    }
+
+    console.log('[AudioMixer] Detected silence segments:', merged);
+    return merged;
   }
 
   isSupported(): boolean {
