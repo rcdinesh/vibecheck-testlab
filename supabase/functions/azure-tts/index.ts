@@ -30,7 +30,7 @@ serve(async (req) => {
       throw new Error('Azure Speech API key not configured');
     }
 
-    const { text, voice = 'en-US-AvaMultilingualNeural', rate = 1.0, pitch = 1.0, volume = 1.0, emotion = 'neutral', speaker_id } = await req.json() as TTSRequest;
+    const { text, voice = 'en-US-Ava:DragonHDLatestNeural', rate = 1.0, pitch = 1.0, volume = 1.0, emotion = 'neutral', speaker_id } = await req.json() as TTSRequest;
 
     console.log('Azure TTS request:', { text: text.substring(0, 100), voice, rate, pitch, volume, emotion, speaker_id });
 

@@ -503,7 +503,7 @@ const VoiceControls = ({
         
         <div className="text-center">
           <div className="text-sm text-muted-foreground mb-2">
-            Using: <span className="font-medium text-voice-primary">Ava Multilingual (Neural)</span>
+            Using: <span className="font-medium text-voice-primary">Ava Dragon HD (Neural)</span>
             {musicConfig.enabled && (
               <> + <span className="font-medium text-voice-secondary">
                 {customIntroName || customOutroName ? 'Custom Music' : 'Kidcast Theme'}

@@ -76,7 +76,7 @@ class AzureSpeechTTS implements TTSProvider {
           },
           body: JSON.stringify({
             text,
-            voice: 'en-US-AvaMultilingualNeural'
+            voice: 'en-US-Ava:DragonHDLatestNeural'
           }),
           signal: controller.signal
         });
@@ -238,7 +238,7 @@ class AzureSpeechTTS implements TTSProvider {
           },
           body: JSON.stringify({
             text,
-            voice: 'en-US-AvaMultilingualNeural'
+            voice: 'en-US-Ava:DragonHDLatestNeural'
           }),
           signal: controller.signal
         });
@@ -331,7 +331,7 @@ class AzureSpeechTTS implements TTSProvider {
 
   async getVoices(): Promise<any[]> {
     return [
-      { name: 'en-US-AvaMultilingualNeural', lang: 'en-US', displayName: 'Ava Multilingual (Female, US)' },
+      { name: 'en-US-Ava:DragonHDLatestNeural', lang: 'en-US', displayName: 'Ava Dragon HD (Female, US)' },
     ];
   }
 
