@@ -1,12 +1,12 @@
 // Voice Controls Component
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Mic, MicOff, Play, Square, Volume2, Settings, Download, Music } from "lucide-react";
+import { Mic, MicOff, Play, Square, Volume2, Settings, Download, Music, Upload, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { VibeVoiceTTS, VIBEVOICE_PRESETS, VibeVoicePreset } from "@/utils/textToSpeech";
 import { AudioMixer, MusicConfig } from "@/utils/AudioMixer";
@@ -42,6 +42,14 @@ const VoiceControls = ({
   const [vibeVoice] = useState(() => new VibeVoiceTTS((playing) => setIsPlaying(playing)));
   const [availableVoices, setAvailableVoices] = useState<SpeechSynthesisVoice[]>([]);
   const [selectedVoice, setSelectedVoice] = useState<string>("");
+  
+  // Custom audio file overrides
+  const [customIntroUrl, setCustomIntroUrl] = useState<string | null>(null);
+  const [customOutroUrl, setCustomOutroUrl] = useState<string | null>(null);
+  const [customIntroName, setCustomIntroName] = useState<string | null>(null);
+  const [customOutroName, setCustomOutroName] = useState<string | null>(null);
+  const introInputRef = useRef<HTMLInputElement>(null);
+  const outroInputRef = useRef<HTMLInputElement>(null);
   
   // Music integration state
   const [musicConfig, setMusicConfig] = useState<MusicConfig>({
@@ -81,6 +89,43 @@ const VoiceControls = ({
     }
   };
 
+  // Handle custom audio file uploads
+  const handleIntroUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (customIntroUrl) URL.revokeObjectURL(customIntroUrl);
+      const url = URL.createObjectURL(file);
+      setCustomIntroUrl(url);
+      setCustomIntroName(file.name);
+      toast({ title: "Custom intro loaded", description: file.name });
+    }
+  };
+
+  const handleOutroUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (customOutroUrl) URL.revokeObjectURL(customOutroUrl);
+      const url = URL.createObjectURL(file);
+      setCustomOutroUrl(url);
+      setCustomOutroName(file.name);
+      toast({ title: "Custom outro loaded", description: file.name });
+    }
+  };
+
+  const clearCustomIntro = () => {
+    if (customIntroUrl) URL.revokeObjectURL(customIntroUrl);
+    setCustomIntroUrl(null);
+    setCustomIntroName(null);
+    if (introInputRef.current) introInputRef.current.value = '';
+  };
+
+  const clearCustomOutro = () => {
+    if (customOutroUrl) URL.revokeObjectURL(customOutroUrl);
+    setCustomOutroUrl(null);
+    setCustomOutroName(null);
+    if (outroInputRef.current) outroInputRef.current.value = '';
+  };
+
   const handleSynthesize = async () => {
     if (!text.trim()) {
       toast({
@@ -94,10 +139,12 @@ const VoiceControls = ({
     try {
       setIsSynthesizing(true);
       
-      // Load intro/outro files if music is enabled
+      // Load intro/outro files if music is enabled (use custom if provided, else default)
       if (musicConfig.enabled && audioMixer.isSupported()) {
+        const introFile = customIntroUrl || kidcastIntro;
+        const outroFile = customOutroUrl || kidcastOutro;
         const breakSound = musicConfig.breakSoundEnabled ? countdownTimer : undefined;
-        await audioMixer.loadIntroOutroFiles(kidcastIntro, kidcastOutro, breakSound);
+        await audioMixer.loadIntroOutroFiles(introFile, outroFile, breakSound);
       }
       
       const settings = {
@@ -286,6 +333,64 @@ const VoiceControls = ({
                 />
               </div>
               
+              {/* Custom Intro Upload */}
+              <div className="flex items-center gap-3 mt-2">
+                <span className="text-sm text-muted-foreground w-20">Custom Intro:</span>
+                <input
+                  ref={introInputRef}
+                  type="file"
+                  accept="audio/*"
+                  onChange={handleIntroUpload}
+                  className="hidden"
+                />
+                {customIntroName ? (
+                  <div className="flex items-center gap-2 flex-1">
+                    <span className="text-xs text-voice-primary truncate max-w-[150px]">{customIntroName}</span>
+                    <Button variant="ghost" size="sm" onClick={clearCustomIntro} className="h-6 w-6 p-0">
+                      <X className="h-3 w-3" />
+                    </Button>
+                  </div>
+                ) : (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => introInputRef.current?.click()}
+                    className="text-xs"
+                  >
+                    <Upload className="h-3 w-3 mr-1" /> Upload
+                  </Button>
+                )}
+              </div>
+              
+              {/* Custom Outro Upload */}
+              <div className="flex items-center gap-3 mt-2">
+                <span className="text-sm text-muted-foreground w-20">Custom Outro:</span>
+                <input
+                  ref={outroInputRef}
+                  type="file"
+                  accept="audio/*"
+                  onChange={handleOutroUpload}
+                  className="hidden"
+                />
+                {customOutroName ? (
+                  <div className="flex items-center gap-2 flex-1">
+                    <span className="text-xs text-voice-primary truncate max-w-[150px]">{customOutroName}</span>
+                    <Button variant="ghost" size="sm" onClick={clearCustomOutro} className="h-6 w-6 p-0">
+                      <X className="h-3 w-3" />
+                    </Button>
+                  </div>
+                ) : (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => outroInputRef.current?.click()}
+                    className="text-xs"
+                  >
+                    <Upload className="h-3 w-3 mr-1" /> Upload
+                  </Button>
+                )}
+              </div>
+              
               <div className="flex items-center gap-3 mt-2">
                 <span className="text-sm text-muted-foreground w-20">Outro Music:</span>
                 <Switch
@@ -400,7 +505,9 @@ const VoiceControls = ({
           <div className="text-sm text-muted-foreground mb-2">
             Using: <span className="font-medium text-voice-primary">Ava Multilingual (Neural)</span>
             {musicConfig.enabled && (
-              <> + <span className="font-medium text-voice-secondary">Kidcast Theme</span></>
+              <> + <span className="font-medium text-voice-secondary">
+                {customIntroName || customOutroName ? 'Custom Music' : 'Kidcast Theme'}
+              </span></>
             )}
           </div>
           <div className="text-xs text-muted-foreground">
