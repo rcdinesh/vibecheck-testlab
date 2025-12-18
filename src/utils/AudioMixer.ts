@@ -2,6 +2,7 @@ interface MusicConfig {
   enabled: boolean;
   introDuration: number;     // full intro play duration
   introFadeDuration: number; // intro fade out duration
+  introStartTime: number;    // start position in intro file (seconds)
   fadeType: 'linear' | 'exponential';
   musicVolume: number;       // 0-1
   speechVolume: number;      // 0-1
@@ -9,6 +10,7 @@ interface MusicConfig {
   outroFadeInDuration: number; // fade in during last X seconds of speech
   outroDuration: number; // play for X seconds after speech ends
   outroFadeOutDuration: number; // fade out duration for outro
+  outroStartTime: number;    // start position in outro file (seconds)
   introUrl?: string; // separate intro file
   outroUrl?: string; // separate outro file
   breakSoundEnabled?: boolean; // enable countdown sound on breaks
@@ -300,12 +302,12 @@ export class AudioMixer {
       // Fade out
       musicOutroGain.gain.linearRampToValueAtTime(0, outroFadeOutEnd);
       
-      // Start outro music
-      musicOutroSource.start(outroFadeInStart);
+      // Start outro music with offset
+      musicOutroSource.start(outroFadeInStart, config.outroStartTime || 0);
     }
 
-    // Start sources
-    musicIntroSource.start(0);
+    // Start sources with intro offset
+    musicIntroSource.start(0, config.introStartTime || 0);
     speechSource.start(speechStartTime);
 
     // Add break sound effects if enabled

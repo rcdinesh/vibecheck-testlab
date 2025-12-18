@@ -56,6 +56,7 @@ const VoiceControls = ({
     enabled: true,
     introDuration: 25,
     introFadeDuration: 3,
+    introStartTime: 0,
     fadeType: 'linear',
     musicVolume: 0.6,
     speechVolume: 0.8,
@@ -63,6 +64,7 @@ const VoiceControls = ({
     outroFadeInDuration: 4,
     outroDuration: 15,
     outroFadeOutDuration: 4,
+    outroStartTime: 0,
     breakSoundEnabled: true,
     breakSoundUrl: countdownTimer
   });
@@ -300,6 +302,19 @@ const VoiceControls = ({
           {musicConfig.enabled && (
             <div className="space-y-3">
               <div className="flex items-center gap-3">
+                <span className="text-sm text-muted-foreground w-20">Intro Start:</span>
+                <Slider
+                  value={[musicConfig.introStartTime]}
+                  onValueChange={(value) => setMusicConfig(prev => ({ ...prev, introStartTime: value[0] }))}
+                  min={0}
+                  max={120}
+                  step={1}
+                  className="flex-1"
+                />
+                <span className="text-sm font-medium text-voice-primary w-8">{musicConfig.introStartTime}s</span>
+              </div>
+              
+              <div className="flex items-center gap-3">
                 <span className="text-sm text-muted-foreground w-20">Intro Duration:</span>
                 <Slider
                   value={[musicConfig.introDuration]}
@@ -401,6 +416,19 @@ const VoiceControls = ({
               
               {musicConfig.outroEnabled && (
                 <>
+                  <div className="flex items-center gap-3">
+                    <span className="text-sm text-muted-foreground w-20">Outro Start:</span>
+                    <Slider
+                      value={[musicConfig.outroStartTime]}
+                      onValueChange={(value) => setMusicConfig(prev => ({ ...prev, outroStartTime: value[0] }))}
+                      min={0}
+                      max={120}
+                      step={1}
+                      className="flex-1"
+                    />
+                    <span className="text-sm font-medium text-voice-primary w-8">{musicConfig.outroStartTime}s</span>
+                  </div>
+                  
                   <div className="flex items-center gap-3">
                     <span className="text-sm text-muted-foreground w-20">Outro Fade In:</span>
                     <Slider
