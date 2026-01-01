@@ -26,7 +26,8 @@ class AzureSpeechTTS implements TTSProvider {
 
   // Text chunking settings
   private readonly MAX_CHUNK_LENGTH = 1000; // Characters per chunk
-  private readonly REQUEST_TIMEOUT = 45000; // 45 seconds timeout
+  private readonly REQUEST_TIMEOUT = 90000; // 90 seconds timeout for HD voices
+  private selectedVoice = 'en-US-AvaMultilingualNeural'; // Default to Multilingual
   private readonly MAX_RETRIES = 3;
 
   private audioData: string | null = null;
@@ -76,7 +77,7 @@ class AzureSpeechTTS implements TTSProvider {
           },
           body: JSON.stringify({
             text,
-            voice: 'en-US-Ava:DragonHDLatestNeural'
+            voice: settings.voice || this.selectedVoice
           }),
           signal: controller.signal
         });
@@ -238,7 +239,7 @@ class AzureSpeechTTS implements TTSProvider {
           },
           body: JSON.stringify({
             text,
-            voice: 'en-US-Ava:DragonHDLatestNeural'
+            voice: settings.voice || this.selectedVoice
           }),
           signal: controller.signal
         });
@@ -331,8 +332,13 @@ class AzureSpeechTTS implements TTSProvider {
 
   async getVoices(): Promise<any[]> {
     return [
-      { name: 'en-US-Ava:DragonHDLatestNeural', lang: 'en-US', displayName: 'Ava Dragon HD (Female, US)' },
+      { name: 'en-US-AvaMultilingualNeural', lang: 'en-US', displayName: 'Ava Multilingual (Neural)' },
+      { name: 'en-US-Ava:DragonHDLatestNeural', lang: 'en-US', displayName: 'Ava Dragon HD (Neural)' },
     ];
+  }
+
+  setVoice(voice: string): void {
+    this.selectedVoice = voice;
   }
 
   isSupported(): boolean {
