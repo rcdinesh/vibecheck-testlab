@@ -100,21 +100,39 @@ serve(async (req) => {
       throw new Error(`Azure TTS failed: ${ttsResponse.status}`);
     }
 
-    const audioBuffer = await ttsResponse.arrayBuffer();
-    
-    // Convert arrayBuffer to base64 safely for large files
-    const uint8Array = new Uint8Array(audioBuffer);
-    let binaryString = '';
-    const chunkSize = 1024; // Process in chunks to avoid stack overflow
-    
-    for (let i = 0; i < uint8Array.length; i += chunkSize) {
-      const chunk = uint8Array.slice(i, i + chunkSize);
-      binaryString += String.fromCharCode.apply(null, Array.from(chunk));
+    // Stream the response body to avoid memory issues with large audio files
+    const reader = ttsResponse.body?.getReader();
+    if (!reader) {
+      throw new Error('Failed to get response reader');
+    }
+
+    const chunks: Uint8Array[] = [];
+    let totalLength = 0;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (value) {
+        chunks.push(value);
+        totalLength += value.length;
+      }
+    }
+
+    // Combine all chunks into a single Uint8Array
+    const audioBuffer = new Uint8Array(totalLength);
+    let offset = 0;
+    for (const chunk of chunks) {
+      audioBuffer.set(chunk, offset);
+      offset += chunk.length;
     }
     
-    const base64Audio = btoa(binaryString);
+    // Convert to base64 using built-in encoder for better performance
+    // Use Deno's standard base64 encoding
+    const base64Audio = btoa(
+      audioBuffer.reduce((data, byte) => data + String.fromCharCode(byte), '')
+    );
 
-    console.log('Azure TTS synthesis completed successfully');
+    console.log('Azure TTS synthesis completed successfully, audio size:', totalLength);
 
     return new Response(JSON.stringify({ 
       audio: base64Audio,
