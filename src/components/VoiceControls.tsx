@@ -40,8 +40,8 @@ const VoiceControls = ({
   const [mixedAudioBlob, setMixedAudioBlob] = useState<Blob | null>(null);
   const [selectedPreset, setSelectedPreset] = useState<VibeVoicePreset>("natural");
   const [vibeVoice] = useState(() => new VibeVoiceTTS((playing) => setIsPlaying(playing)));
-  const [availableVoices, setAvailableVoices] = useState<SpeechSynthesisVoice[]>([]);
-  const [selectedVoice, setSelectedVoice] = useState<string>("");
+  const [availableVoices, setAvailableVoices] = useState<{ name: string; lang: string; displayName: string }[]>([]);
+  const [selectedVoice, setSelectedVoice] = useState<string>("en-US-AvaMultilingualNeural");
   
   // Custom audio file overrides
   const [customIntroUrl, setCustomIntroUrl] = useState<string | null>(null);
@@ -267,13 +267,9 @@ const VoiceControls = ({
   useEffect(() => {
     const loadVoices = async () => {
       if (vibeVoice.isSupported()) {
-        const voices = await vibeVoice.getAvailableVoices();
+        const voices = await vibeVoice.getAvailableVoices() as unknown as { name: string; lang: string; displayName: string }[];
         setAvailableVoices(voices);
-        // Set default voice to first English voice
-        const englishVoice = voices.find(v => v.lang.startsWith('en-'));
-        if (englishVoice) {
-          setSelectedVoice(englishVoice.name);
-        }
+        // Default is already set to AvaMultilingual
       }
     };
     loadVoices();
@@ -483,6 +479,24 @@ const VoiceControls = ({
           )}
         </div>
 
+        {/* Voice Selection */}
+        <div className="flex items-center gap-3 p-3 bg-background/50 rounded-lg border border-border/30">
+          <Volume2 className="w-4 h-4 text-voice-primary" />
+          <span className="text-sm text-muted-foreground">Voice:</span>
+          <Select value={selectedVoice} onValueChange={setSelectedVoice}>
+            <SelectTrigger className="flex-1 bg-background border-border/50">
+              <SelectValue placeholder="Select voice..." />
+            </SelectTrigger>
+            <SelectContent>
+              {availableVoices.map((voice) => (
+                <SelectItem key={voice.name} value={voice.name}>
+                  {voice.displayName || voice.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
         <div className="space-y-2">
           <div className="flex justify-between items-center">
             <span className="text-sm text-muted-foreground">Character count:</span>
@@ -531,7 +545,9 @@ const VoiceControls = ({
         
         <div className="text-center">
           <div className="text-sm text-muted-foreground mb-2">
-            Using: <span className="font-medium text-voice-primary">Ava Dragon HD (Neural)</span>
+            Using: <span className="font-medium text-voice-primary">
+              {availableVoices.find(v => v.name === selectedVoice)?.displayName || 'Ava Multilingual (Neural)'}
+            </span>
             {musicConfig.enabled && (
               <> + <span className="font-medium text-voice-secondary">
                 {customIntroName || customOutroName ? 'Custom Music' : 'Kidcast Theme'}
