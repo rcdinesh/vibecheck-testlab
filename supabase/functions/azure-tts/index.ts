@@ -1,5 +1,6 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { encode as base64Encode } from "https://deno.land/std@0.168.0/encoding/base64.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -16,8 +17,95 @@ interface TTSRequest {
   speaker_id?: string;
 }
 
+const MAX_TEXT_LENGTH = 2000; // Max characters per chunk for reliable synthesis
+
+// Split text into chunks at sentence boundaries
+function chunkText(text: string, maxLength: number): string[] {
+  if (text.length <= maxLength) {
+    return [text];
+  }
+
+  const chunks: string[] = [];
+  const sentences = text.split(/(?<=[.!?])\s+/);
+  let currentChunk = '';
+
+  for (const sentence of sentences) {
+    if (currentChunk.length + sentence.length + 1 > maxLength && currentChunk.length > 0) {
+      chunks.push(currentChunk.trim());
+      currentChunk = sentence;
+    } else {
+      currentChunk += (currentChunk ? ' ' : '') + sentence;
+    }
+  }
+
+  if (currentChunk.trim()) {
+    chunks.push(currentChunk.trim());
+  }
+
+  // If a single sentence is too long, split by words
+  return chunks.flatMap(chunk => {
+    if (chunk.length <= maxLength) return [chunk];
+    const words = chunk.split(/\s+/);
+    const subChunks: string[] = [];
+    let current = '';
+    for (const word of words) {
+      if (current.length + word.length + 1 > maxLength && current.length > 0) {
+        subChunks.push(current.trim());
+        current = word;
+      } else {
+        current += (current ? ' ' : '') + word;
+      }
+    }
+    if (current.trim()) subChunks.push(current.trim());
+    return subChunks;
+  });
+}
+
+async function synthesizeChunk(
+  text: string,
+  voice: string,
+  rateStr: string,
+  pitchStr: string,
+  volume: number,
+  azureEmotion: string,
+  accessToken: string,
+  azureRegion: string
+): Promise<Uint8Array> {
+  // Fix plain <break> tags
+  const fixedText = text.replace(/<break\s*\/?>/gi, '<break time="3s"/>');
+
+  const ssml = `
+    <speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xmlns:mstts="https://www.w3.org/2001/mstts" xml:lang="en-US">
+      <voice name="${voice}">
+        <mstts:express-as style="${azureEmotion}">
+          <prosody rate="${rateStr}" pitch="${pitchStr}" volume="${Math.round(volume * 100)}%">
+            ${fixedText}
+          </prosody>
+        </mstts:express-as>
+      </voice>
+    </speak>`.trim();
+
+  const ttsResponse = await fetch(`https://${azureRegion}.tts.speech.microsoft.com/cognitiveservices/v1`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${accessToken}`,
+      'Content-Type': 'application/ssml+xml',
+      'X-Microsoft-OutputFormat': 'audio-24khz-48kbitrate-mono-mp3'
+    },
+    body: ssml
+  });
+
+  if (!ttsResponse.ok) {
+    const errorText = await ttsResponse.text();
+    console.error('Azure TTS chunk error:', errorText);
+    throw new Error(`Azure TTS failed: ${ttsResponse.status}`);
+  }
+
+  const arrayBuffer = await ttsResponse.arrayBuffer();
+  return new Uint8Array(arrayBuffer);
+}
+
 serve(async (req) => {
-  // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
@@ -32,12 +120,9 @@ serve(async (req) => {
 
     const { text, voice = 'en-US-AvaMultilingualNeural', rate = 1.0, pitch = 1.0, volume = 1.0, emotion = 'neutral', speaker_id } = await req.json() as TTSRequest;
 
-    console.log('Azure TTS request:', { text: text.substring(0, 100), voice, rate, pitch, volume, emotion, speaker_id });
+    console.log('Azure TTS request:', { textLength: text.length, voice, rate, pitch, volume, emotion });
 
-    // Fix plain <break> tags by adding default time attribute
-    const fixedText = text.replace(/<break\s*\/?>/gi, '<break time="3s"/>');
-
-    // Map VibeVoice emotions to Azure Speech emotions
+    // Map emotions
     const azureEmotions: Record<string, string> = {
       'natural': 'neutral',
       'expressive': 'excited',
@@ -45,7 +130,6 @@ serve(async (req) => {
       'energetic': 'excited',
       'professional': 'serious'
     };
-
     const azureEmotion = azureEmotions[emotion] || 'neutral';
 
     // Convert rate/pitch to Azure format
@@ -53,20 +137,6 @@ serve(async (req) => {
     const pitchPercent = Math.round((pitch - 1) * 100);
     const rateStr = ratePercent >= 0 ? `+${ratePercent}%` : `${ratePercent}%`;
     const pitchStr = pitchPercent >= 0 ? `+${pitchPercent}%` : `${pitchPercent}%`;
-
-    // Create SSML with proper namespace and formatting
-    const ssml = `
-      <speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xmlns:mstts="https://www.w3.org/2001/mstts" xml:lang="en-US">
-        <voice name="${voice}">
-          <mstts:express-as style="${azureEmotion}">
-            <prosody rate="${rateStr}" pitch="${pitchStr}" volume="${Math.round(volume * 100)}%">
-              ${fixedText}
-            </prosody>
-          </mstts:express-as>
-        </voice>
-      </speak>`.trim();
-
-    console.log('Generated SSML:', ssml);
 
     // Get access token
     const tokenResponse = await fetch(`https://${azureRegion}.api.cognitive.microsoft.com/sts/v1.0/issueToken`, {
@@ -83,56 +153,40 @@ serve(async (req) => {
 
     const accessToken = await tokenResponse.text();
 
-    // Synthesize speech
-    const ttsResponse = await fetch(`https://${azureRegion}.tts.speech.microsoft.com/cognitiveservices/v1`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${accessToken}`,
-        'Content-Type': 'application/ssml+xml',
-        'X-Microsoft-OutputFormat': 'audio-24khz-48kbitrate-mono-mp3'
-      },
-      body: ssml
-    });
+    // Chunk the text for reliable synthesis
+    const chunks = chunkText(text, MAX_TEXT_LENGTH);
+    console.log(`Processing ${chunks.length} text chunks`);
 
-    if (!ttsResponse.ok) {
-      const errorText = await ttsResponse.text();
-      console.error('Azure TTS error:', errorText);
-      throw new Error(`Azure TTS failed: ${ttsResponse.status}`);
+    // Process each chunk
+    const audioChunks: Uint8Array[] = [];
+    for (let i = 0; i < chunks.length; i++) {
+      console.log(`Synthesizing chunk ${i + 1}/${chunks.length} (${chunks[i].length} chars)`);
+      const audioData = await synthesizeChunk(
+        chunks[i],
+        voice,
+        rateStr,
+        pitchStr,
+        volume,
+        azureEmotion,
+        accessToken,
+        azureRegion
+      );
+      audioChunks.push(audioData);
     }
 
-    // Stream the response body to avoid memory issues with large audio files
-    const reader = ttsResponse.body?.getReader();
-    if (!reader) {
-      throw new Error('Failed to get response reader');
-    }
-
-    const chunks: Uint8Array[] = [];
-    let totalLength = 0;
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      if (value) {
-        chunks.push(value);
-        totalLength += value.length;
-      }
-    }
-
-    // Combine all chunks into a single Uint8Array
-    const audioBuffer = new Uint8Array(totalLength);
+    // Combine all audio chunks
+    const totalLength = audioChunks.reduce((sum, chunk) => sum + chunk.length, 0);
+    const combinedAudio = new Uint8Array(totalLength);
     let offset = 0;
-    for (const chunk of chunks) {
-      audioBuffer.set(chunk, offset);
+    for (const chunk of audioChunks) {
+      combinedAudio.set(chunk, offset);
       offset += chunk.length;
     }
-    
-    // Convert to base64 using built-in encoder for better performance
-    // Use Deno's standard base64 encoding
-    const base64Audio = btoa(
-      audioBuffer.reduce((data, byte) => data + String.fromCharCode(byte), '')
-    );
 
-    console.log('Azure TTS synthesis completed successfully, audio size:', totalLength);
+    // Convert to base64 using Deno's standard library
+    const base64Audio = base64Encode(combinedAudio);
+
+    console.log('Azure TTS synthesis completed, total audio size:', totalLength);
 
     return new Response(JSON.stringify({ 
       audio: base64Audio,
