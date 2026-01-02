@@ -96,9 +96,10 @@ async function synthesizeChunk(
   });
 
   if (!ttsResponse.ok) {
-    const errorText = await ttsResponse.text();
+    const errorText = (await ttsResponse.text()).trim();
     console.error('Azure TTS chunk error:', errorText);
-    throw new Error(`Azure TTS failed: ${ttsResponse.status}`);
+    const suffix = errorText ? ` ${errorText}` : '';
+    throw new Error(`Azure TTS failed: ${ttsResponse.status}${suffix}`);
   }
 
   const arrayBuffer = await ttsResponse.arrayBuffer();
@@ -197,10 +198,24 @@ serve(async (req) => {
 
   } catch (error) {
     console.error('Error in azure-tts function:', error);
-    return new Response(JSON.stringify({ 
-      error: error.message 
-    }), {
-      status: 500,
+
+    const message = error instanceof Error ? error.message : String(error);
+
+    let status = 500;
+    const m1 = message.match(/\bAzure TTS failed:\s*([45]\d{2})\b/);
+    const m2 = message.match(/\bFailed to get Azure token:\s*([45]\d{2})\b/);
+    if (m1) status = Number(m1[1]);
+    else if (m2) status = Number(m2[1]);
+
+    const code =
+      status === 429
+        ? /quota exceeded/i.test(message)
+          ? 'quota_exceeded'
+          : 'rate_limited'
+        : 'tts_error';
+
+    return new Response(JSON.stringify({ error: message, code }), {
+      status,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   }

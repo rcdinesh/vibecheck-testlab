@@ -32,6 +32,41 @@ class AzureSpeechTTS implements TTSProvider {
 
   private audioData: string | null = null;
 
+  private async readSupabaseFunctionError(response: Response): Promise<string | null> {
+    try {
+      const data = (await response.clone().json()) as any;
+      if (data && typeof data.error === 'string') return data.error;
+    } catch {
+      // ignore
+    }
+
+    try {
+      const text = await response.clone().text();
+      return text?.trim() ? text.trim() : null;
+    } catch {
+      // ignore
+    }
+
+    return null;
+  }
+
+  private formatTtsError(status: number, message?: string): string {
+    const trimmed = (message || '').trim();
+
+    if (status === 429) {
+      if (/quota exceeded/i.test(trimmed)) {
+        return `Azure Speech quota exceeded (429). ${trimmed}`;
+      }
+
+      return trimmed
+        ? `Azure Speech rate limited (429). ${trimmed}`
+        : 'Azure Speech rate limited (429). Please wait a moment and try again.';
+    }
+
+    const base = trimmed || 'Request failed.';
+    return `Azure TTS request failed (${status}). ${base}`;
+  }
+
   async speak(text: string, settings: VoiceSettings = {}): Promise<string> {
     return new Promise(async (resolve, reject) => {
       try {
@@ -85,12 +120,13 @@ class AzureSpeechTTS implements TTSProvider {
         clearTimeout(timeoutId);
 
         if (!response.ok) {
-          throw new Error(`Azure TTS request failed: ${response.status} ${response.statusText}`);
+          const serverMessage = await this.readSupabaseFunctionError(response);
+          throw new Error(this.formatTtsError(response.status, serverMessage ?? response.statusText));
         }
 
         const data = await response.json();
         
-        if (data.error) {
+        if (data?.error) {
           throw new Error(data.error);
         }
 
@@ -247,12 +283,13 @@ class AzureSpeechTTS implements TTSProvider {
         clearTimeout(timeoutId);
 
         if (!response.ok) {
-          throw new Error(`Azure TTS request failed: ${response.status} ${response.statusText}`);
+          const serverMessage = await this.readSupabaseFunctionError(response);
+          throw new Error(this.formatTtsError(response.status, serverMessage ?? response.statusText));
         }
 
         const data = await response.json();
         
-        if (data.error) {
+        if (data?.error) {
           throw new Error(data.error);
         }
 
