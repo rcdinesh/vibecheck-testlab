@@ -185,9 +185,11 @@ const VoiceControls = ({
       });
     } catch (error) {
       console.error("TTS Error:", error);
+      const message =
+        error instanceof Error ? error.message : "Failed to synthesize speech.";
       toast({
         title: "Speech Error",
-        description: "Failed to synthesize speech. Please try again.",
+        description: message,
         variant: "destructive",
       });
     } finally {
@@ -199,6 +201,7 @@ const VoiceControls = ({
     setIsPlaying(true);
     onPlay?.();
   };
+
 
   const handleAudioPause = () => {
     setIsPlaying(false);
@@ -549,10 +552,14 @@ const VoiceControls = ({
               {availableVoices.find(v => v.name === selectedVoice)?.displayName || 'Ava Multilingual (Neural)'}
             </span>
             {musicConfig.enabled && (
-              <> + <span className="font-medium text-voice-secondary">
-                {customIntroName || customOutroName ? 'Custom Music' : 'Kidcast Theme'}
-              </span></>
+              <>
+                {" + "}
+                <span className="font-medium text-voice-secondary">
+                  {customIntroName || customOutroName ? 'Custom Music' : 'Kidcast Theme'}
+                </span>
+              </>
             )}
+
           </div>
           <div className="text-xs text-muted-foreground">
             {!vibeVoice.isSupported() 
