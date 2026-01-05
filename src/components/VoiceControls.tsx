@@ -230,7 +230,17 @@ const VoiceControls = ({
       const a = document.createElement('a');
       a.href = url;
       const ext = audioToDownload.type.includes('wav') ? 'wav' : 'mp3';
-      const filename = musicConfig.enabled ? `kidcast-episode-${Date.now()}.${ext}` : `azure-tts-${Date.now()}.mp3`;
+      
+      // Generate filename from text content
+      const slugifiedText = text
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9\s]/g, '')
+        .split(/\s+/)
+        .slice(0, 5)
+        .join('-')
+        .substring(0, 50) || 'audio';
+      const filename = `${slugifiedText}.${ext}`;
       a.download = filename;
       document.body.appendChild(a);
       a.click();
