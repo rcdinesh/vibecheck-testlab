@@ -12,6 +12,7 @@ import { VibeVoiceTTS, VIBEVOICE_PRESETS, VibeVoicePreset } from "@/utils/textTo
 import { AudioMixer, MusicConfig } from "@/utils/AudioMixer";
 import { useToast } from "@/components/ui/use-toast";
 import AudioPlayer from "./AudioPlayer";
+import { supabase } from "@/integrations/supabase/client";
 import kidcastIntro from "@/assets/kidcast-intro.wav";
 import kidcastOutro from "@/assets/kidcast-outro-extended.m4a";
 import countdownTimer from "@/assets/countdown-3sec.wav";
@@ -212,7 +213,7 @@ const VoiceControls = ({
     onStop?.();
   };
 
-  const handleDownload = () => {
+  const handleDownload = async () => {
     const audioToDownload = mixedAudioBlob || (lastAudioData ? base64ToBlob(lastAudioData) : null);
     
     if (!audioToDownload) {
@@ -225,22 +226,25 @@ const VoiceControls = ({
     }
 
     try {
+      const ext = audioToDownload.type.includes('wav') ? 'wav' : 'mp3';
+      let filename = `audio.${ext}`;
+
+      // Extract topic from text using AI
+      try {
+        const { data, error } = await supabase.functions.invoke('extract-topic', {
+          body: { text }
+        });
+        if (!error && data?.topic) {
+          filename = `${data.topic}.${ext}`;
+        }
+      } catch (e) {
+        console.warn('Topic extraction failed, using fallback:', e);
+      }
+
       // Create download link
       const url = URL.createObjectURL(audioToDownload);
       const a = document.createElement('a');
       a.href = url;
-      const ext = audioToDownload.type.includes('wav') ? 'wav' : 'mp3';
-      
-      // Generate filename from text content
-      const slugifiedText = text
-        .trim()
-        .toLowerCase()
-        .replace(/[^a-z0-9\s]/g, '')
-        .split(/\s+/)
-        .slice(0, 5)
-        .join('-')
-        .substring(0, 50) || 'audio';
-      const filename = `${slugifiedText}.${ext}`;
       a.download = filename;
       document.body.appendChild(a);
       a.click();
@@ -249,7 +253,7 @@ const VoiceControls = ({
 
       toast({
         title: "Download started",
-        description: musicConfig.enabled ? "Mixed episode with music intro downloading." : "MP3 file is being downloaded.",
+        description: `Downloading "${filename}"`,
       });
     } catch (error) {
       console.error("Download failed:", error);
