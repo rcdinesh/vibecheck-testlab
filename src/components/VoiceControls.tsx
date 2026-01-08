@@ -56,7 +56,7 @@ const VoiceControls = ({
   // Music integration state
   const [musicConfig, setMusicConfig] = useState<MusicConfig>({
     enabled: true,
-    introDuration: 25,
+    introDuration: 33,
     introFadeDuration: 3,
     introStartTime: 0,
     fadeType: 'linear',
