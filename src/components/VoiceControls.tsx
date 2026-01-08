@@ -43,6 +43,7 @@ const VoiceControls = ({
   const [vibeVoice] = useState(() => new VibeVoiceTTS((playing) => setIsPlaying(playing)));
   const [availableVoices, setAvailableVoices] = useState<{ name: string; lang: string; displayName: string }[]>([]);
   const [selectedVoice, setSelectedVoice] = useState<string>("en-US-AvaMultilingualNeural");
+  const [speechRate, setSpeechRate] = useState<number>(0.9);
   
   // Custom audio file overrides
   const [customIntroUrl, setCustomIntroUrl] = useState<string | null>(null);
@@ -153,6 +154,7 @@ const VoiceControls = ({
       const settings = {
         ...VIBEVOICE_PRESETS[selectedPreset],
         voice: selectedVoice || undefined,
+        rate: speechRate,
       };
       const audioData = await vibeVoice.synthesizeOnly(text, settings);
       setLastAudioData(audioData);
@@ -510,6 +512,23 @@ const VoiceControls = ({
                   {voice.displayName || voice.name}
                 </SelectItem>
               ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* Speech Rate Selection */}
+        <div className="flex items-center gap-3 p-3 bg-background/50 rounded-lg border border-border/30">
+          <Settings className="w-4 h-4 text-voice-primary" />
+          <span className="text-sm text-muted-foreground">Speed:</span>
+          <Select value={speechRate.toString()} onValueChange={(v) => setSpeechRate(parseFloat(v))}>
+            <SelectTrigger className="w-32 bg-background border-border/50">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="0.9">0.9x (Slower)</SelectItem>
+              <SelectItem value="0.95">0.95x</SelectItem>
+              <SelectItem value="1">1x (Normal)</SelectItem>
+              <SelectItem value="1.05">1.05x (Faster)</SelectItem>
             </SelectContent>
           </Select>
         </div>
