@@ -18,8 +18,8 @@ interface MusicConfig {
   // Background music settings
   bgMusicEnabled?: boolean;
   bgMusicUrl?: string;
-  bgMusicStartTime?: number; // when to start bg music (seconds from speech start)
-  bgMusicEndTime?: number;   // when to end bg music (seconds from speech start, 0 = until outro)
+  bgMusicStartTime?: number; // when to start bg music (-1 = auto-detect from break tag, else seconds from speech start)
+  bgMusicEndTime?: number;   // seconds before outro to end bg music
   bgMusicVolume?: number;    // 0-1, default low (0.1)
   bgMusicFadeIn?: number;    // fade in duration
   bgMusicFadeOut?: number;   // fade out duration
@@ -344,7 +344,7 @@ export class AudioMixer {
 
     // Add background music if enabled
     if (config.bgMusicEnabled && this.bgMusicArrayBuffer) {
-      await this.addBackgroundMusic(offlineContext, config, speechStartTime, speechDuration, masterGain);
+      await this.addBackgroundMusic(offlineContext, config, speechStartTime, speechDuration, masterGain, originalText, speechBuffer);
     }
 
     // Add break sound effects if enabled
@@ -546,7 +546,9 @@ export class AudioMixer {
     config: MusicConfig,
     speechStartTime: number,
     speechDuration: number,
-    masterGain: GainNode
+    masterGain: GainNode,
+    originalText?: string,
+    speechBuffer?: AudioBuffer
   ): Promise<void> {
     if (!this.bgMusicArrayBuffer) {
       console.warn('[AudioMixer] No background music buffer available');
@@ -579,9 +581,24 @@ export class AudioMixer {
         return;
       }
 
-      // User offsets (in seconds) into the speech window
-      let startOffset = Math.max(0, config.bgMusicStartTime ?? 0);
-      let endOffset = Math.max(0, config.bgMusicEndTime ?? 0);
+      // Determine start offset - auto-detect from break tag if bgMusicStartTime < 0
+      let startOffset: number;
+      if ((config.bgMusicStartTime ?? -1) < 0 && originalText) {
+        // Auto-detect: find first <break time="10s"/> position
+        const breakPosition = this.findFirstLongBreakPosition(originalText, speechBuffer);
+        if (breakPosition !== null) {
+          startOffset = breakPosition;
+          console.log('[AudioMixer] Auto-detected bg music start from break tag at:', breakPosition);
+        } else {
+          // Fallback: start 20s into speech or at 1/3 of speech
+          startOffset = Math.min(20, speechDuration / 3);
+          console.log('[AudioMixer] No break tag found, using fallback start offset:', startOffset);
+        }
+      } else {
+        startOffset = Math.max(0, config.bgMusicStartTime ?? 0);
+      }
+      
+      let endOffset = Math.max(0, config.bgMusicEndTime ?? 10); // Default 10s before outro
 
       // Ensure we always leave enough time for fades + audible playback.
       const minPlayable = Math.max(1, fadeIn + fadeOut + 0.25);
@@ -703,6 +720,48 @@ export class AudioMixer {
       
       console.log(`[AudioMixer] Break sound scheduled at ${breakStartTime}s (speech offset: ${breakTiming.position}s, duration: ${breakTiming.duration}s, playDuration: ${breakPlayDuration}s, gain: ${audibleGain})`);
     }
+  }
+
+  /**
+   * Find the position (in seconds from speech start) of the first long break tag (>= 8s).
+   * Used for auto-detecting when to start background music.
+   */
+  private findFirstLongBreakPosition(text: string, speechBuffer?: AudioBuffer): number | null {
+    // Look for break tags with time >= 8 seconds (typically the trivia break is 10s)
+    const breakPattern = /<break\s+time=["'](\d+(?:\.\d+)?)(ms|s)["']\s*\/?\s*>/gi;
+    const breakMatches = [...text.matchAll(breakPattern)];
+    
+    // Find first break that's >= 8 seconds
+    let targetBreakIndex = -1;
+    let targetBreakDuration = 0;
+    for (let i = 0; i < breakMatches.length; i++) {
+      const value = parseFloat(breakMatches[i][1]);
+      const unit = breakMatches[i][2];
+      const durationSec = unit === 'ms' ? value / 1000 : value;
+      if (durationSec >= 8) {
+        targetBreakIndex = i;
+        targetBreakDuration = durationSec;
+        break;
+      }
+    }
+    
+    if (targetBreakIndex === -1) {
+      return null;
+    }
+    
+    // Use parseBreakTimings to get accurate position
+    const allTimings = this.parseBreakTimings(text, speechBuffer);
+    if (allTimings.length > targetBreakIndex) {
+      // Return position at the END of the break (so music starts after the break)
+      const timing = allTimings[targetBreakIndex];
+      return timing.position + timing.duration;
+    }
+    
+    // Fallback: estimate based on text position
+    const textBeforeBreak = text.substring(0, breakMatches[targetBreakIndex].index);
+    const wordsBeforeBreak = textBeforeBreak.replace(/<[^>]+>/g, ' ').trim().split(/\s+/).filter(w => w.length > 0).length;
+    const estimatedPosition = wordsBeforeBreak / 2.5; // ~2.5 words per second
+    return estimatedPosition + targetBreakDuration;
   }
 
   private parseBreakTimings(text: string, speechBuffer?: AudioBuffer): Array<{ position: number; duration: number }> {
