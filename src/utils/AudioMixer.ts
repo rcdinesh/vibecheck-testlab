@@ -572,14 +572,13 @@ export class AudioMixer {
       const bgStartOffset = config.bgMusicStartTime ?? 0; // Offset from speech start
       const bgActualStart = speechStartTime + bgStartOffset;
       
-      // End time: 0 means until outro starts fading in
-      let bgEndTime: number;
-      if (config.bgMusicEndTime && config.bgMusicEndTime > 0) {
-        bgEndTime = speechStartTime + config.bgMusicEndTime;
-      } else {
-        // Default: end when outro starts fading in (before speech ends)
-        bgEndTime = speechStartTime + speechDuration - (config.outroEnabled ? config.outroFadeInDuration : 0);
-      }
+      // speechEndTime is when the speech actually ends
+      const speechEndTime = speechStartTime + speechDuration;
+      
+      // bgMusicEndTime is how many seconds BEFORE the outro to stop (offset from end)
+      const bgEndOffset = config.bgMusicEndTime ?? 0;
+      // Calculate the actual end time by subtracting the offset from the speech end
+      let bgEndTime = speechEndTime - bgEndOffset - (config.outroEnabled ? config.outroFadeInDuration : 0);
       
       // Ensure valid timing
       bgEndTime = Math.max(bgActualStart + fadeIn + fadeOut + 1, bgEndTime);
