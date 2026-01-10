@@ -771,8 +771,7 @@ export class AudioMixer {
     const timings: Array<{ position: number; duration: number }> = [];
     let match;
     
-    // Extract expected breaks from SSML - only include SHORT breaks (< 8s) for timer sound
-    // Long breaks (>= 8s like 10s) are used for trivia sections, not countdown timers
+    // Extract expected breaks from SSML - ONLY include exactly 4s breaks for timer sound
     const breakMatches = [...normalizedText.matchAll(breakPattern)];
     const expectedBreaks: number[] = [];
     const breakIndices: number[] = []; // Track which matches we're including
@@ -781,8 +780,8 @@ export class AudioMixer {
       const breakValue = parseFloat(breakMatches[i][1]);
       const breakUnit = breakMatches[i][2];
       const durationSec = breakUnit === 'ms' ? breakValue / 1000 : breakValue;
-      // Only include breaks shorter than 8 seconds for the timer sound
-      if (durationSec < 8) {
+      // Only include exactly 4 second breaks for the timer sound
+      if (durationSec === 4) {
         expectedBreaks.push(durationSec);
         breakIndices.push(i);
       }
