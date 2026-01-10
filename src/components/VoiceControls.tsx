@@ -74,7 +74,7 @@ const VoiceControls = ({
     breakSoundUrl: countdownTimer,
     // Background music defaults
     bgMusicEnabled: false,
-    bgMusicVolume: 0.08,
+    bgMusicVolume: 0.15,
     bgMusicStartTime: 20, // after intro
     bgMusicEndTime: 20, // before outro
     bgMusicFadeIn: 2,
