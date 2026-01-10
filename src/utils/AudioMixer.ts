@@ -771,13 +771,22 @@ export class AudioMixer {
     const timings: Array<{ position: number; duration: number }> = [];
     let match;
     
-    // Extract expected breaks from SSML
+    // Extract expected breaks from SSML - only include SHORT breaks (< 8s) for timer sound
+    // Long breaks (>= 8s like 10s) are used for trivia sections, not countdown timers
     const breakMatches = [...normalizedText.matchAll(breakPattern)];
-    const expectedBreaks = breakMatches.map((m) => {
-      const breakValue = parseFloat(m[1]);
-      const breakUnit = m[2];
-      return breakUnit === 'ms' ? breakValue / 1000 : breakValue;
-    });
+    const expectedBreaks: number[] = [];
+    const breakIndices: number[] = []; // Track which matches we're including
+    
+    for (let i = 0; i < breakMatches.length; i++) {
+      const breakValue = parseFloat(breakMatches[i][1]);
+      const breakUnit = breakMatches[i][2];
+      const durationSec = breakUnit === 'ms' ? breakValue / 1000 : breakValue;
+      // Only include breaks shorter than 8 seconds for the timer sound
+      if (durationSec < 8) {
+        expectedBreaks.push(durationSec);
+        breakIndices.push(i);
+      }
+    }
 
     // Try precise alignment using detected silence in the actual TTS audio
     if (speechBuffer) {
