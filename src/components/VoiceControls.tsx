@@ -75,8 +75,8 @@ const VoiceControls = ({
     // Background music defaults
     bgMusicEnabled: false,
     bgMusicVolume: 0.08,
-    bgMusicStartTime: 0,
-    bgMusicEndTime: 0, // 0 = auto (until outro)
+    bgMusicStartTime: 20, // after intro
+    bgMusicEndTime: 20, // before outro
     bgMusicFadeIn: 2,
     bgMusicFadeOut: 2
   });
