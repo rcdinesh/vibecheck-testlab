@@ -75,8 +75,8 @@ const VoiceControls = ({
     // Background music defaults
     bgMusicEnabled: false,
     bgMusicVolume: 0.15,
-    bgMusicStartTime: 20, // after intro
-    bgMusicEndTime: 20, // before outro
+    bgMusicStartTime: -1, // -1 means auto-detect from <break time="10s"/>
+    bgMusicEndTime: 10, // before outro
     bgMusicFadeIn: 2,
     bgMusicFadeOut: 2
   });
@@ -581,16 +581,29 @@ const VoiceControls = ({
                     </div>
                     
                     <div className="flex items-center gap-3 mt-2">
-                      <span className="text-sm text-muted-foreground w-20">Start After:</span>
-                      <Slider
-                        value={[musicConfig.bgMusicStartTime ?? 0]}
-                        onValueChange={(value) => setMusicConfig(prev => ({ ...prev, bgMusicStartTime: value[0] }))}
-                        min={0}
-                        max={60}
-                        step={1}
-                        className="flex-1"
-                      />
-                      <span className="text-sm font-medium text-voice-secondary w-12">{musicConfig.bgMusicStartTime ?? 0}s</span>
+                      <span className="text-sm text-muted-foreground w-20">Start At:</span>
+                      <div className="flex items-center gap-2 flex-1">
+                        <Button
+                          variant={(musicConfig.bgMusicStartTime ?? -1) < 0 ? "default" : "outline"}
+                          size="sm"
+                          onClick={() => setMusicConfig(prev => ({ ...prev, bgMusicStartTime: -1 }))}
+                          className="text-xs h-7"
+                        >
+                          Auto (break)
+                        </Button>
+                        <Slider
+                          value={[(musicConfig.bgMusicStartTime ?? -1) < 0 ? 0 : musicConfig.bgMusicStartTime!]}
+                          onValueChange={(value) => setMusicConfig(prev => ({ ...prev, bgMusicStartTime: value[0] }))}
+                          min={0}
+                          max={120}
+                          step={1}
+                          className="flex-1"
+                          disabled={(musicConfig.bgMusicStartTime ?? -1) < 0}
+                        />
+                      </div>
+                      <span className="text-sm font-medium text-voice-secondary w-16">
+                        {(musicConfig.bgMusicStartTime ?? -1) < 0 ? "Auto" : `${musicConfig.bgMusicStartTime}s`}
+                      </span>
                     </div>
                     
                     <div className="flex items-center gap-3 mt-2">
