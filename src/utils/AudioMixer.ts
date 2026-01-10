@@ -582,51 +582,76 @@ export class AudioMixer {
       }
 
       // Auto-cue mode: if bgMusicStartTime < 0 and we find a <break time="10s"/>,
-      // start 3s before that break, play full volume for 8s, then fade out over 3s.
+      // Phase 1: Start 3s before break at 8% volume (low bed)
+      // Phase 2: At the break, ramp to full volume for 8s
+      // Phase 3: Fade down over 3s
+      // Phase 4: Continue at 8% volume (looped) until user-defined end time
       const autoFromBreak = (config.bgMusicStartTime ?? -1) < 0 && !!originalText;
 
       if (autoFromBreak && originalText) {
         const breakStart = this.findFirstLongBreakPosition(originalText, speechBuffer);
         if (breakStart !== null) {
-          const cueStartOffset = Math.max(0, breakStart - 3);
+          const leadInSeconds = 3; // Start 3s before the break
+          const lowVolume = 0.08; // 8% volume for background bed
+          const fullVolumeDuration = 8; // Full volume for 8s starting at break
+          const fadeDownDuration = 3; // Fade down over 3s
+
+          // Calculate timeline positions
+          const cueStartOffset = Math.max(0, breakStart - leadInSeconds);
           const bgActualStart = Math.max(0, Math.min(windowStart + cueStartOffset, totalDuration));
+          
+          // breakTime is when we ramp to full volume (3s after bgActualStart)
+          const breakTime = windowStart + breakStart;
+          
+          // Full volume ends 8s after break
+          const fullVolumeEndTime = breakTime + fullVolumeDuration;
+          
+          // Fade down ends 3s after full volume ends
+          const fadeDownEndTime = fullVolumeEndTime + fadeDownDuration;
+          
+          // End time is user-defined (windowEnd already accounts for outro offset)
+          let endOffset = Math.max(0, config.bgMusicEndTime ?? 10);
+          let bgEndTime = windowEnd - endOffset;
+          bgEndTime = Math.max(fadeDownEndTime + 0.1, Math.min(bgEndTime, totalDuration));
 
-          const fullVolumeDuration = 8;
-          const fadeOutDuration = 3;
-
-          const desiredEnd = bgActualStart + fullVolumeDuration + fadeOutDuration;
-          const bgEndTime = Math.max(
-            bgActualStart + 0.1,
-            Math.min(desiredEnd, windowEnd, totalDuration)
-          );
-
-          const fullVolumeEnd = Math.min(bgActualStart + fullVolumeDuration, bgEndTime);
-          const actualFadeOut = Math.max(0, bgEndTime - fullVolumeEnd);
-
-          console.log('[AudioMixer] Background music cue timing:', {
+          console.log('[AudioMixer] Background music cue timing (with bed):', {
             windowStart,
             windowEnd,
             breakStart,
-            cueStartOffset,
             bgActualStart,
+            breakTime,
+            fullVolumeEndTime,
+            fadeDownEndTime,
             bgEndTime,
+            lowVolume,
             bgVolume,
             fullVolumeDuration,
-            fadeOutDuration: actualFadeOut
+            fadeDownDuration
           });
 
-          // Gain envelope: quick ramp up to avoid clicks, then full volume, then fade out.
-          const rampIn = 0.02;
+          // Build multi-phase gain envelope
+          const rampIn = 0.02; // Quick ramp to avoid clicks
           bgGain.gain.setValueAtTime(0, 0);
+          
+          // Phase 1: Start at low volume (8%) 3s before break
           bgGain.gain.setValueAtTime(0, Math.max(0, bgActualStart - rampIn));
-          bgGain.gain.linearRampToValueAtTime(bgVolume, bgActualStart + rampIn);
-
-          bgGain.gain.setValueAtTime(bgVolume, fullVolumeEnd);
-          if (actualFadeOut > 0.001) {
-            bgGain.gain.linearRampToValueAtTime(0.0001, bgEndTime);
-          } else {
-            bgGain.gain.setValueAtTime(0.0001, bgEndTime);
+          bgGain.gain.linearRampToValueAtTime(lowVolume, bgActualStart + rampIn);
+          bgGain.gain.setValueAtTime(lowVolume, breakTime - rampIn);
+          
+          // Phase 2: Ramp to full volume at break, hold for 8s
+          bgGain.gain.linearRampToValueAtTime(bgVolume, breakTime + rampIn);
+          bgGain.gain.setValueAtTime(bgVolume, fullVolumeEndTime);
+          
+          // Phase 3: Fade down over 3s back to low volume
+          bgGain.gain.linearRampToValueAtTime(lowVolume, fadeDownEndTime);
+          
+          // Phase 4: Continue at low volume until end, then fade out
+          const finalFadeOut = 2; // 2s fade out at the very end
+          const holdUntil = Math.max(fadeDownEndTime, bgEndTime - finalFadeOut);
+          if (holdUntil > fadeDownEndTime) {
+            bgGain.gain.setValueAtTime(lowVolume, holdUntil);
           }
+          bgGain.gain.linearRampToValueAtTime(0.0001, bgEndTime);
 
           bgSource.start(bgActualStart);
           bgSource.stop(bgEndTime);
