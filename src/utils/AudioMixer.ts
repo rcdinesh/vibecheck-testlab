@@ -565,39 +565,80 @@ export class AudioMixer {
       bgGain.connect(masterGain);
       
       const bgVolume = config.bgMusicVolume ?? 0.1; // Default low volume
-      const fadeIn = config.bgMusicFadeIn ?? 2;
-      const fadeOut = config.bgMusicFadeOut ?? 2;
-      
-      // Calculate timing - default to start after intro, end before outro
-      const bgStartOffset = config.bgMusicStartTime ?? 0; // Offset from speech start
-      const bgActualStart = speechStartTime + bgStartOffset;
-      
-      // speechEndTime is when the speech actually ends
+      let fadeIn = config.bgMusicFadeIn ?? 2;
+      let fadeOut = config.bgMusicFadeOut ?? 2;
+
+      // Window where background music is allowed to play: during speech, ending before outro fades in
       const speechEndTime = speechStartTime + speechDuration;
-      
-      // bgMusicEndTime is how many seconds BEFORE the outro to stop (offset from end)
-      const bgEndOffset = config.bgMusicEndTime ?? 0;
-      // Calculate the actual end time by subtracting the offset from the speech end
-      let bgEndTime = speechEndTime - bgEndOffset - (config.outroEnabled ? config.outroFadeInDuration : 0);
-      
-      // Ensure valid timing
-      bgEndTime = Math.max(bgActualStart + fadeIn + fadeOut + 1, bgEndTime);
-      
+      const windowStart = speechStartTime;
+      const windowEnd = speechEndTime - (config.outroEnabled ? config.outroFadeInDuration : 0);
+      const totalDuration = offlineContext.length / offlineContext.sampleRate;
+
+      if (windowEnd <= windowStart + 0.25) {
+        console.warn('[AudioMixer] Speech window too short for background music; skipping', { windowStart, windowEnd });
+        return;
+      }
+
+      // User offsets (in seconds) into the speech window
+      let startOffset = Math.max(0, config.bgMusicStartTime ?? 0);
+      let endOffset = Math.max(0, config.bgMusicEndTime ?? 0);
+
+      // Ensure we always leave enough time for fades + audible playback.
+      const minPlayable = Math.max(1, fadeIn + fadeOut + 0.25);
+      const available = Math.max(0, windowEnd - windowStart);
+      const maxOffsetSum = Math.max(0, available - minPlayable);
+
+      // If the requested start/end offsets don't fit (common for short scripts), scale them down so music still plays.
+      const offsetSum = startOffset + endOffset;
+      if (offsetSum > 0 && offsetSum > maxOffsetSum) {
+        const factor = maxOffsetSum / offsetSum;
+        startOffset = startOffset * factor;
+        endOffset = endOffset * factor;
+      }
+
+      let bgActualStart = windowStart + startOffset;
+      let bgEndTime = windowEnd - endOffset;
+
+      // Clamp into the renderable timeline
+      bgActualStart = Math.max(0, Math.min(bgActualStart, totalDuration));
+      bgEndTime = Math.max(0, Math.min(bgEndTime, totalDuration));
+
+      // Final sanity: if timing is still invalid, fall back to the full speech window.
+      if (bgEndTime <= bgActualStart + 0.1) {
+        bgActualStart = windowStart;
+        bgEndTime = windowEnd;
+      }
+
+      bgActualStart = Math.max(0, Math.min(bgActualStart, totalDuration));
+      bgEndTime = Math.max(bgActualStart + 0.1, Math.min(bgEndTime, totalDuration));
+
+      const playable = bgEndTime - bgActualStart;
+      const actualFadeIn = Math.min(fadeIn, playable / 2);
+      const actualFadeOut = Math.min(fadeOut, playable / 2);
+
       console.log('[AudioMixer] Background music timing:', {
+        windowStart,
+        windowEnd,
         bgActualStart,
         bgEndTime,
         bgVolume,
-        fadeIn,
-        fadeOut
+        fadeIn: actualFadeIn,
+        fadeOut: actualFadeOut,
+        startOffset,
+        endOffset
       });
-      
+
       // Set up gain envelope
       bgGain.gain.setValueAtTime(0, 0);
       bgGain.gain.setValueAtTime(0, bgActualStart);
-      bgGain.gain.linearRampToValueAtTime(bgVolume, bgActualStart + fadeIn);
-      bgGain.gain.setValueAtTime(bgVolume, bgEndTime - fadeOut);
+      bgGain.gain.linearRampToValueAtTime(bgVolume, bgActualStart + actualFadeIn);
+
+      const holdTime = bgEndTime - actualFadeOut;
+      if (holdTime > bgActualStart + actualFadeIn) {
+        bgGain.gain.setValueAtTime(bgVolume, holdTime);
+      }
       bgGain.gain.linearRampToValueAtTime(0, bgEndTime);
-      
+
       // Start and stop the background music
       bgSource.start(bgActualStart);
       bgSource.stop(bgEndTime);
