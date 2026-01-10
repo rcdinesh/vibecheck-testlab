@@ -15,6 +15,14 @@ interface MusicConfig {
   outroUrl?: string; // separate outro file
   breakSoundEnabled?: boolean; // enable countdown sound on breaks
   breakSoundUrl?: string; // countdown timer sound
+  // Background music settings
+  bgMusicEnabled?: boolean;
+  bgMusicUrl?: string;
+  bgMusicStartTime?: number; // when to start bg music (seconds from speech start)
+  bgMusicEndTime?: number;   // when to end bg music (seconds from speech start, 0 = until outro)
+  bgMusicVolume?: number;    // 0-1, default low (0.1)
+  bgMusicFadeIn?: number;    // fade in duration
+  bgMusicFadeOut?: number;   // fade out duration
 }
 
 interface AudioMixerOptions {
@@ -31,6 +39,7 @@ export class AudioMixer {
   private outroArrayBuffer: ArrayBuffer | null = null; // raw bytes for offline decode
   private breakSoundBuffer: AudioBuffer | null = null;
   private breakSoundArrayBuffer: ArrayBuffer | null = null;
+  private bgMusicArrayBuffer: ArrayBuffer | null = null; // background music raw bytes
   private musicBuffer: AudioBuffer | null = null; // fallback for old single-file approach
   private musicSource: AudioBufferSourceNode | null = null;
   private musicGain: GainNode | null = null;
@@ -39,6 +48,29 @@ export class AudioMixer {
   private isMixing = false;
   
   constructor(private options: AudioMixerOptions = {}) {}
+
+  async loadBackgroundMusic(bgMusicUrl: string): Promise<void> {
+    if (!this.audioContext) {
+      await this.initialize();
+    }
+
+    try {
+      console.log('Loading background music:', bgMusicUrl);
+      const response = await fetch(bgMusicUrl, { mode: 'cors' });
+      if (!response.ok) {
+        throw new Error(`Failed to fetch background music: ${response.status}`);
+      }
+      this.bgMusicArrayBuffer = await response.arrayBuffer();
+      console.log('Background music loaded successfully');
+    } catch (error) {
+      console.error('Failed to load background music:', error);
+      throw new Error(`Failed to load background music: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  clearBackgroundMusic(): void {
+    this.bgMusicArrayBuffer = null;
+  }
 
   async initialize(): Promise<void> {
     if (this.isInitialized) return;
@@ -310,6 +342,11 @@ export class AudioMixer {
     musicIntroSource.start(0, config.introStartTime || 0);
     speechSource.start(speechStartTime);
 
+    // Add background music if enabled
+    if (config.bgMusicEnabled && this.bgMusicArrayBuffer) {
+      await this.addBackgroundMusic(offlineContext, config, speechStartTime, speechDuration, masterGain);
+    }
+
     // Add break sound effects if enabled
     if (config.breakSoundEnabled && this.breakSoundArrayBuffer && originalText) {
       await this.addBreakSounds(offlineContext, originalText, speechStartTime, masterGain, speechBuffer);
@@ -501,6 +538,73 @@ export class AudioMixer {
       this.speechAudio.pause();
       this.speechAudio.currentTime = 0;
       this.speechAudio = null;
+    }
+  }
+
+  private async addBackgroundMusic(
+    offlineContext: OfflineAudioContext,
+    config: MusicConfig,
+    speechStartTime: number,
+    speechDuration: number,
+    masterGain: GainNode
+  ): Promise<void> {
+    if (!this.bgMusicArrayBuffer) {
+      console.warn('[AudioMixer] No background music buffer available');
+      return;
+    }
+
+    try {
+      const bgBuffer = await offlineContext.decodeAudioData(this.bgMusicArrayBuffer.slice(0));
+      
+      const bgSource = offlineContext.createBufferSource();
+      bgSource.buffer = bgBuffer;
+      bgSource.loop = true; // Loop the background music
+      
+      const bgGain = offlineContext.createGain();
+      bgSource.connect(bgGain);
+      bgGain.connect(masterGain);
+      
+      const bgVolume = config.bgMusicVolume ?? 0.1; // Default low volume
+      const fadeIn = config.bgMusicFadeIn ?? 2;
+      const fadeOut = config.bgMusicFadeOut ?? 2;
+      
+      // Calculate timing - default to start after intro, end before outro
+      const bgStartOffset = config.bgMusicStartTime ?? 0; // Offset from speech start
+      const bgActualStart = speechStartTime + bgStartOffset;
+      
+      // End time: 0 means until outro starts fading in
+      let bgEndTime: number;
+      if (config.bgMusicEndTime && config.bgMusicEndTime > 0) {
+        bgEndTime = speechStartTime + config.bgMusicEndTime;
+      } else {
+        // Default: end when outro starts fading in (before speech ends)
+        bgEndTime = speechStartTime + speechDuration - (config.outroEnabled ? config.outroFadeInDuration : 0);
+      }
+      
+      // Ensure valid timing
+      bgEndTime = Math.max(bgActualStart + fadeIn + fadeOut + 1, bgEndTime);
+      
+      console.log('[AudioMixer] Background music timing:', {
+        bgActualStart,
+        bgEndTime,
+        bgVolume,
+        fadeIn,
+        fadeOut
+      });
+      
+      // Set up gain envelope
+      bgGain.gain.setValueAtTime(0, 0);
+      bgGain.gain.setValueAtTime(0, bgActualStart);
+      bgGain.gain.linearRampToValueAtTime(bgVolume, bgActualStart + fadeIn);
+      bgGain.gain.setValueAtTime(bgVolume, bgEndTime - fadeOut);
+      bgGain.gain.linearRampToValueAtTime(0, bgEndTime);
+      
+      // Start and stop the background music
+      bgSource.start(bgActualStart);
+      bgSource.stop(bgEndTime);
+      
+    } catch (error) {
+      console.error('[AudioMixer] Failed to add background music:', error);
     }
   }
 
