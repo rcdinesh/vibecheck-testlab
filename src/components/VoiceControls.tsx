@@ -50,8 +50,11 @@ const VoiceControls = ({
   const [customOutroUrl, setCustomOutroUrl] = useState<string | null>(null);
   const [customIntroName, setCustomIntroName] = useState<string | null>(null);
   const [customOutroName, setCustomOutroName] = useState<string | null>(null);
+  const [bgMusicUrl, setBgMusicUrl] = useState<string | null>(null);
+  const [bgMusicName, setBgMusicName] = useState<string | null>(null);
   const introInputRef = useRef<HTMLInputElement>(null);
   const outroInputRef = useRef<HTMLInputElement>(null);
+  const bgMusicInputRef = useRef<HTMLInputElement>(null);
   
   // Music integration state
   const [musicConfig, setMusicConfig] = useState<MusicConfig>({
@@ -68,7 +71,14 @@ const VoiceControls = ({
     outroFadeOutDuration: 4,
     outroStartTime: 0,
     breakSoundEnabled: true,
-    breakSoundUrl: countdownTimer
+    breakSoundUrl: countdownTimer,
+    // Background music defaults
+    bgMusicEnabled: false,
+    bgMusicVolume: 0.08,
+    bgMusicStartTime: 0,
+    bgMusicEndTime: 0, // 0 = auto (until outro)
+    bgMusicFadeIn: 2,
+    bgMusicFadeOut: 2
   });
   const [audioMixer] = useState(() => {
     const mixer = new AudioMixer({
@@ -130,6 +140,27 @@ const VoiceControls = ({
     if (outroInputRef.current) outroInputRef.current.value = '';
   };
 
+  const handleBgMusicUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (bgMusicUrl) URL.revokeObjectURL(bgMusicUrl);
+      const url = URL.createObjectURL(file);
+      setBgMusicUrl(url);
+      setBgMusicName(file.name);
+      setMusicConfig(prev => ({ ...prev, bgMusicEnabled: true }));
+      toast({ title: "Background music loaded", description: file.name });
+    }
+  };
+
+  const clearBgMusic = () => {
+    if (bgMusicUrl) URL.revokeObjectURL(bgMusicUrl);
+    setBgMusicUrl(null);
+    setBgMusicName(null);
+    setMusicConfig(prev => ({ ...prev, bgMusicEnabled: false }));
+    audioMixer.clearBackgroundMusic();
+    if (bgMusicInputRef.current) bgMusicInputRef.current.value = '';
+  };
+
   const handleSynthesize = async () => {
     if (!text.trim()) {
       toast({
@@ -149,6 +180,13 @@ const VoiceControls = ({
         const outroFile = customOutroUrl || kidcastOutro;
         const breakSound = musicConfig.breakSoundEnabled ? countdownTimer : undefined;
         await audioMixer.loadIntroOutroFiles(introFile, outroFile, breakSound);
+        
+        // Load background music if enabled
+        if (musicConfig.bgMusicEnabled && bgMusicUrl) {
+          await audioMixer.loadBackgroundMusic(bgMusicUrl);
+        } else {
+          audioMixer.clearBackgroundMusic();
+        }
       }
       
       const settings = {
@@ -485,6 +523,105 @@ const VoiceControls = ({
                 </>
               )}
               
+              {/* Background Music Section */}
+              <div className="border-t border-voice-primary/20 pt-3 mt-3">
+                <div className="flex items-center gap-3 mb-3">
+                  <Music className="w-4 h-4 text-voice-secondary" />
+                  <span className="text-sm font-medium text-foreground">Background Music</span>
+                  <Switch
+                    checked={musicConfig.bgMusicEnabled}
+                    onCheckedChange={(bgMusicEnabled) => setMusicConfig(prev => ({ ...prev, bgMusicEnabled }))}
+                    disabled={!bgMusicUrl}
+                    className="ml-auto"
+                  />
+                </div>
+                
+                {/* Background Music Upload */}
+                <div className="flex items-center gap-3">
+                  <span className="text-sm text-muted-foreground w-20">Music File:</span>
+                  <input
+                    ref={bgMusicInputRef}
+                    type="file"
+                    accept="audio/*"
+                    onChange={handleBgMusicUpload}
+                    className="hidden"
+                  />
+                  {bgMusicName ? (
+                    <div className="flex items-center gap-2 flex-1">
+                      <span className="text-xs text-voice-secondary truncate max-w-[150px]">{bgMusicName}</span>
+                      <Button variant="ghost" size="sm" onClick={clearBgMusic} className="h-6 w-6 p-0">
+                        <X className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  ) : (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => bgMusicInputRef.current?.click()}
+                      className="text-xs"
+                    >
+                      <Upload className="h-3 w-3 mr-1" /> Upload
+                    </Button>
+                  )}
+                </div>
+                
+                {musicConfig.bgMusicEnabled && bgMusicUrl && (
+                  <>
+                    <div className="flex items-center gap-3 mt-3">
+                      <span className="text-sm text-muted-foreground w-20">Volume:</span>
+                      <Slider
+                        value={[musicConfig.bgMusicVolume ?? 0.08]}
+                        onValueChange={(value) => setMusicConfig(prev => ({ ...prev, bgMusicVolume: value[0] }))}
+                        min={0.01}
+                        max={0.3}
+                        step={0.01}
+                        className="flex-1"
+                      />
+                      <span className="text-sm font-medium text-voice-secondary w-12">{Math.round((musicConfig.bgMusicVolume ?? 0.08) * 100)}%</span>
+                    </div>
+                    
+                    <div className="flex items-center gap-3 mt-2">
+                      <span className="text-sm text-muted-foreground w-20">Start After:</span>
+                      <Slider
+                        value={[musicConfig.bgMusicStartTime ?? 0]}
+                        onValueChange={(value) => setMusicConfig(prev => ({ ...prev, bgMusicStartTime: value[0] }))}
+                        min={0}
+                        max={60}
+                        step={1}
+                        className="flex-1"
+                      />
+                      <span className="text-sm font-medium text-voice-secondary w-12">{musicConfig.bgMusicStartTime ?? 0}s</span>
+                    </div>
+                    
+                    <div className="flex items-center gap-3 mt-2">
+                      <span className="text-sm text-muted-foreground w-20">End Before:</span>
+                      <Slider
+                        value={[musicConfig.bgMusicEndTime ?? 0]}
+                        onValueChange={(value) => setMusicConfig(prev => ({ ...prev, bgMusicEndTime: value[0] }))}
+                        min={0}
+                        max={60}
+                        step={1}
+                        className="flex-1"
+                      />
+                      <span className="text-sm font-medium text-voice-secondary w-12">{(musicConfig.bgMusicEndTime ?? 0) === 0 ? 'Auto' : `${musicConfig.bgMusicEndTime}s`}</span>
+                    </div>
+                    
+                    <div className="flex items-center gap-3 mt-2">
+                      <span className="text-sm text-muted-foreground w-20">Fade In/Out:</span>
+                      <Slider
+                        value={[musicConfig.bgMusicFadeIn ?? 2]}
+                        onValueChange={(value) => setMusicConfig(prev => ({ ...prev, bgMusicFadeIn: value[0], bgMusicFadeOut: value[0] }))}
+                        min={0.5}
+                        max={5}
+                        step={0.5}
+                        className="flex-1"
+                      />
+                      <span className="text-sm font-medium text-voice-secondary w-12">{musicConfig.bgMusicFadeIn ?? 2}s</span>
+                    </div>
+                  </>
+                )}
+              </div>
+              
               <div className="text-xs text-muted-foreground mt-2">
                 • Music intro: {musicConfig.introDuration}s full → {musicConfig.introFadeDuration}s fade → speech only
                 {musicConfig.breakSoundEnabled && (
@@ -492,6 +629,9 @@ const VoiceControls = ({
                 )}
                 {musicConfig.outroEnabled && (
                   <> • Music outro: fades in last {musicConfig.outroFadeInDuration}s of speech → plays {musicConfig.outroDuration}s after speech ends (fade out last {musicConfig.outroFadeOutDuration}s)</>
+                )}
+                {musicConfig.bgMusicEnabled && bgMusicUrl && (
+                  <> • Background music: plays during speech at {Math.round((musicConfig.bgMusicVolume ?? 0.08) * 100)}% volume</>
                 )}
               </div>
             </div>
