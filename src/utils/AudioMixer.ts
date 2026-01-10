@@ -591,24 +591,29 @@ export class AudioMixer {
       if (autoFromBreak && originalText) {
         const breakStart = this.findFirstLongBreakPosition(originalText, speechBuffer);
         if (breakStart !== null) {
-          const leadInSeconds = 3; // Start 3s before the break
-          const lowVolume = 0.08; // 8% volume for background bed
+          const leadInSeconds = 3; // start 3s before the break
+          const leadInTarget = 0.025; // ~2–3% absolute gain
+          const bedTarget = 0.08; // 8% absolute gain
           const fullVolumeDuration = 8; // Full volume for 8s starting at break
-          const fadeDownDuration = 3; // Fade down over 3s
+          const fadeDownDuration = 3; // Fade down over 3s back to bed
+
+          // Keep the curve sane even if the user sets bgVolume below our targets.
+          const leadInVolume = Math.min(leadInTarget, bgVolume);
+          const bedVolume = Math.min(bedTarget, bgVolume);
 
           // Calculate timeline positions
           const cueStartOffset = Math.max(0, breakStart - leadInSeconds);
           const bgActualStart = Math.max(0, Math.min(windowStart + cueStartOffset, totalDuration));
-          
-          // breakTime is when we ramp to full volume (3s after bgActualStart)
+
+          // breakTime is the moment we hit full volume
           const breakTime = windowStart + breakStart;
-          
+
           // Full volume ends 8s after break
           const fullVolumeEndTime = breakTime + fullVolumeDuration;
-          
+
           // Fade down ends 3s after full volume ends
           const fadeDownEndTime = fullVolumeEndTime + fadeDownDuration;
-          
+
           // End time is user-defined (windowEnd already accounts for outro offset)
           let endOffset = Math.max(0, config.bgMusicEndTime ?? 10);
           let bgEndTime = windowEnd - endOffset;
@@ -623,7 +628,8 @@ export class AudioMixer {
             fullVolumeEndTime,
             fadeDownEndTime,
             bgEndTime,
-            lowVolume,
+            leadInVolume,
+            bedVolume,
             bgVolume,
             fullVolumeDuration,
             fadeDownDuration
@@ -633,37 +639,37 @@ export class AudioMixer {
           const rampIn = 0.02; // Quick ramp to avoid clicks
           bgGain.gain.setValueAtTime(0, 0);
 
-          // Phase 1: Start at low volume (8%) 3s before break
-          const rampUpStart = bgActualStart + rampIn;
-          bgGain.gain.setValueAtTime(0, Math.max(0, bgActualStart - rampIn));
-          bgGain.gain.linearRampToValueAtTime(lowVolume, rampUpStart);
+          const tStart = Math.min(bgActualStart, bgEndTime);
+          const tBreak = Math.min(Math.max(breakTime, tStart), bgEndTime);
+          const tFullEnd = Math.min(fullVolumeEndTime, bgEndTime);
+          const tFadeEnd = Math.min(fadeDownEndTime, bgEndTime);
 
-          // Phase 2: Hold low volume during the lead-in, then ramp up to full volume right before the break
-          const rampToFullDuration = 0.75; // makes the ramp-up perceptible
-          const rampToFullStart = Math.min(
-            Math.max(rampUpStart, breakTime - rampToFullDuration),
-            bgEndTime
-          );
-          bgGain.gain.setValueAtTime(lowVolume, rampToFullStart);
+          // Phase 1: start at ~2–3% volume at (break - 3s)
+          bgGain.gain.setValueAtTime(0, Math.max(0, tStart - rampIn));
+          bgGain.gain.linearRampToValueAtTime(leadInVolume, Math.min(tStart + rampIn, bgEndTime));
 
-          const rampToFullEnd = Math.min(Math.max(breakTime, rampToFullStart), bgEndTime);
-          if (rampToFullEnd > rampToFullStart + 0.01) {
-            bgGain.gain.linearRampToValueAtTime(bgVolume, rampToFullEnd);
+          // Phase 2: ramp over the full 3s lead-in up to 100% (bgVolume) at the break
+          if (tBreak > tStart + rampIn + 0.01) {
+            bgGain.gain.linearRampToValueAtTime(bgVolume, tBreak);
           } else {
-            bgGain.gain.setValueAtTime(bgVolume, rampToFullEnd);
+            bgGain.gain.setValueAtTime(bgVolume, tBreak);
           }
 
-          // Hold for 8 seconds
-          bgGain.gain.setValueAtTime(bgVolume, fullVolumeEndTime);
-          
-          // Phase 3: Fade down over 3s back to low volume
-          bgGain.gain.linearRampToValueAtTime(lowVolume, fadeDownEndTime);
-          
-          // Phase 4: Continue at low volume until end, then fade out
+          // Hold full volume for 8 seconds
+          bgGain.gain.setValueAtTime(bgVolume, tFullEnd);
+
+          // Phase 3: fade down over 3 seconds to the 8% bed
+          if (tFadeEnd > tFullEnd + 0.01) {
+            bgGain.gain.linearRampToValueAtTime(bedVolume, tFadeEnd);
+          } else {
+            bgGain.gain.setValueAtTime(bedVolume, tFadeEnd);
+          }
+
+          // Phase 4: continue at bed volume until end, then tiny fade-out
           const finalFadeOut = 2; // 2s fade out at the very end
-          const holdUntil = Math.max(fadeDownEndTime, bgEndTime - finalFadeOut);
-          if (holdUntil > fadeDownEndTime) {
-            bgGain.gain.setValueAtTime(lowVolume, holdUntil);
+          const holdUntil = Math.max(tFadeEnd, bgEndTime - finalFadeOut);
+          if (holdUntil > tFadeEnd + 0.01) {
+            bgGain.gain.setValueAtTime(bedVolume, holdUntil);
           }
           bgGain.gain.linearRampToValueAtTime(0.0001, bgEndTime);
 
