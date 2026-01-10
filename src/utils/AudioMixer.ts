@@ -581,23 +581,69 @@ export class AudioMixer {
         return;
       }
 
-      // Determine start offset - auto-detect from break tag if bgMusicStartTime < 0
-      let startOffset: number;
-      if ((config.bgMusicStartTime ?? -1) < 0 && originalText) {
-        // Auto-detect: find first <break time="10s"/> position
-        const breakPosition = this.findFirstLongBreakPosition(originalText, speechBuffer);
-        if (breakPosition !== null) {
-          startOffset = breakPosition;
-          console.log('[AudioMixer] Auto-detected bg music start from break tag at:', breakPosition);
-        } else {
-          // Fallback: start 20s into speech or at 1/3 of speech
-          startOffset = Math.min(20, speechDuration / 3);
-          console.log('[AudioMixer] No break tag found, using fallback start offset:', startOffset);
+      // Auto-cue mode: if bgMusicStartTime < 0 and we find a <break time="10s"/>,
+      // start 3s before that break, play full volume for 8s, then fade out over 3s.
+      const autoFromBreak = (config.bgMusicStartTime ?? -1) < 0 && !!originalText;
+
+      if (autoFromBreak && originalText) {
+        const breakStart = this.findFirstLongBreakPosition(originalText, speechBuffer);
+        if (breakStart !== null) {
+          const cueStartOffset = Math.max(0, breakStart - 3);
+          const bgActualStart = Math.max(0, Math.min(windowStart + cueStartOffset, totalDuration));
+
+          const fullVolumeDuration = 8;
+          const fadeOutDuration = 3;
+
+          const desiredEnd = bgActualStart + fullVolumeDuration + fadeOutDuration;
+          const bgEndTime = Math.max(
+            bgActualStart + 0.1,
+            Math.min(desiredEnd, windowEnd, totalDuration)
+          );
+
+          const fullVolumeEnd = Math.min(bgActualStart + fullVolumeDuration, bgEndTime);
+          const actualFadeOut = Math.max(0, bgEndTime - fullVolumeEnd);
+
+          console.log('[AudioMixer] Background music cue timing:', {
+            windowStart,
+            windowEnd,
+            breakStart,
+            cueStartOffset,
+            bgActualStart,
+            bgEndTime,
+            bgVolume,
+            fullVolumeDuration,
+            fadeOutDuration: actualFadeOut
+          });
+
+          // Gain envelope: quick ramp up to avoid clicks, then full volume, then fade out.
+          const rampIn = 0.02;
+          bgGain.gain.setValueAtTime(0, 0);
+          bgGain.gain.setValueAtTime(0, Math.max(0, bgActualStart - rampIn));
+          bgGain.gain.linearRampToValueAtTime(bgVolume, bgActualStart + rampIn);
+
+          bgGain.gain.setValueAtTime(bgVolume, fullVolumeEnd);
+          if (actualFadeOut > 0.001) {
+            bgGain.gain.linearRampToValueAtTime(0.0001, bgEndTime);
+          } else {
+            bgGain.gain.setValueAtTime(0.0001, bgEndTime);
+          }
+
+          bgSource.start(bgActualStart);
+          bgSource.stop(bgEndTime);
+          return;
         }
+      }
+
+      // Long-bed mode (manual start time, or auto mode but no 10s break found)
+      let startOffset: number;
+      if (autoFromBreak && originalText) {
+        // Fallback: start 20s into speech or at 1/3 of speech
+        startOffset = Math.min(20, speechDuration / 3);
+        console.log('[AudioMixer] No 10s break found, using fallback start offset:', startOffset);
       } else {
         startOffset = Math.max(0, config.bgMusicStartTime ?? 0);
       }
-      
+
       let endOffset = Math.max(0, config.bgMusicEndTime ?? 10); // Default 10s before outro
 
       // Ensure we always leave enough time for fades + audible playback.
@@ -645,24 +691,21 @@ export class AudioMixer {
         endOffset
       });
 
-      // Set up gain envelope: full volume for 8 seconds, then fade out
-      const fullVolumeDuration = 8; // Play at full volume for 8 seconds
+      // Set up gain envelope (fade in/out)
       bgGain.gain.setValueAtTime(0, 0);
-      // Start immediately at full volume (no fade-in)
-      bgGain.gain.setValueAtTime(bgVolume, bgActualStart);
-      
-      // Hold at full volume for 8 seconds
-      const fullVolumeEnd = Math.min(bgActualStart + fullVolumeDuration, bgEndTime - actualFadeOut);
-      if (fullVolumeEnd > bgActualStart) {
-        bgGain.gain.setValueAtTime(bgVolume, fullVolumeEnd);
+      bgGain.gain.setValueAtTime(0, bgActualStart);
+      bgGain.gain.linearRampToValueAtTime(bgVolume, bgActualStart + actualFadeIn);
+
+      const holdTime = bgEndTime - actualFadeOut;
+      if (holdTime > bgActualStart + actualFadeIn) {
+        bgGain.gain.setValueAtTime(bgVolume, holdTime);
       }
-      // Then fade out
-      bgGain.gain.linearRampToValueAtTime(0, fullVolumeEnd + actualFadeOut);
+      bgGain.gain.linearRampToValueAtTime(0.0001, bgEndTime);
 
       // Start and stop the background music
       bgSource.start(bgActualStart);
-      bgSource.stop(fullVolumeEnd + actualFadeOut);
-      
+      bgSource.stop(bgEndTime);
+
     } catch (error) {
       console.error('[AudioMixer] Failed to add background music:', error);
     }
@@ -726,45 +769,68 @@ export class AudioMixer {
   }
 
   /**
-   * Find the position (in seconds from speech start) of the first 10s break tag.
-   * Used for auto-detecting when to start background music.
+   * Find the position (in seconds from speech start) of the START of the first <break time="10s"/> tag.
+   * Used for auto-detecting when to start the background music cue.
    */
   private findFirstLongBreakPosition(text: string, speechBuffer?: AudioBuffer): number | null {
-    // Look for break tags with exactly 10 seconds
     const breakPattern = /<break\s+time=["'](\d+(?:\.\d+)?)(ms|s)["']\s*\/?\s*>/gi;
     const breakMatches = [...text.matchAll(breakPattern)];
-    
+
     // Find first break that's exactly 10 seconds
-    let targetBreakIndex = -1;
-    let targetBreakDuration = 0;
-    for (let i = 0; i < breakMatches.length; i++) {
-      const value = parseFloat(breakMatches[i][1]);
-      const unit = breakMatches[i][2];
+    let targetMatch: RegExpMatchArray | null = null;
+    for (const m of breakMatches) {
+      const value = parseFloat(m[1]);
+      const unit = m[2];
       const durationSec = unit === 'ms' ? value / 1000 : value;
       if (durationSec === 10) {
-        targetBreakIndex = i;
-        targetBreakDuration = durationSec;
+        targetMatch = m;
         break;
       }
     }
-    
-    if (targetBreakIndex === -1) {
-      return null;
+
+    if (!targetMatch) return null;
+
+    const expected = 10;
+
+    // Prefer aligning to actual silence in the synthesized audio.
+    if (speechBuffer) {
+      const silenceSegments = this.detectSilenceSegments(speechBuffer);
+
+      let best: { start: number; duration: number } | null = null;
+      let bestScore = Number.POSITIVE_INFINITY;
+
+      for (const seg of silenceSegments) {
+        // Must be reasonably long to be our 10s break
+        if (seg.duration < expected * 0.7) continue;
+
+        const score = Math.abs(seg.duration - expected);
+        const isBetter =
+          score < bestScore - 1e-6 ||
+          (Math.abs(score - bestScore) <= 1e-6 && (best ? seg.start < best.start : true));
+
+        if (isBetter) {
+          best = seg;
+          bestScore = score;
+        }
+      }
+
+      // Accept if it's close-ish (handles TTS rounding like 10.52s)
+      if (best && bestScore <= 2.5) {
+        return best.start;
+      }
     }
-    
-    // Use parseBreakTimings to get accurate position
-    const allTimings = this.parseBreakTimings(text, speechBuffer);
-    if (allTimings.length > targetBreakIndex) {
-      // Return position at the END of the break (so music starts after the break)
-      const timing = allTimings[targetBreakIndex];
-      return timing.position + timing.duration;
-    }
-    
+
     // Fallback: estimate based on text position
-    const textBeforeBreak = text.substring(0, breakMatches[targetBreakIndex].index);
-    const wordsBeforeBreak = textBeforeBreak.replace(/<[^>]+>/g, ' ').trim().split(/\s+/).filter(w => w.length > 0).length;
+    const matchIndex = targetMatch.index ?? 0;
+    const textBeforeBreak = text.substring(0, matchIndex);
+    const wordsBeforeBreak = textBeforeBreak
+      .replace(/<[^>]+>/g, ' ')
+      .trim()
+      .split(/\s+/)
+      .filter((w) => w.length > 0).length;
+
     const estimatedPosition = wordsBeforeBreak / 2.5; // ~2.5 words per second
-    return estimatedPosition + targetBreakDuration;
+    return estimatedPosition;
   }
 
   private parseBreakTimings(text: string, speechBuffer?: AudioBuffer): Array<{ position: number; duration: number }> {
