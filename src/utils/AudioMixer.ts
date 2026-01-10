@@ -632,14 +632,28 @@ export class AudioMixer {
           // Build multi-phase gain envelope
           const rampIn = 0.02; // Quick ramp to avoid clicks
           bgGain.gain.setValueAtTime(0, 0);
-          
+
           // Phase 1: Start at low volume (8%) 3s before break
+          const rampUpStart = bgActualStart + rampIn;
           bgGain.gain.setValueAtTime(0, Math.max(0, bgActualStart - rampIn));
-          bgGain.gain.linearRampToValueAtTime(lowVolume, bgActualStart + rampIn);
-          bgGain.gain.setValueAtTime(lowVolume, breakTime - rampIn);
-          
-          // Phase 2: Ramp to full volume at break, hold for 8s
-          bgGain.gain.linearRampToValueAtTime(bgVolume, breakTime + rampIn);
+          bgGain.gain.linearRampToValueAtTime(lowVolume, rampUpStart);
+
+          // Phase 2: Hold low volume during the lead-in, then ramp up to full volume right before the break
+          const rampToFullDuration = 0.75; // makes the ramp-up perceptible
+          const rampToFullStart = Math.min(
+            Math.max(rampUpStart, breakTime - rampToFullDuration),
+            bgEndTime
+          );
+          bgGain.gain.setValueAtTime(lowVolume, rampToFullStart);
+
+          const rampToFullEnd = Math.min(Math.max(breakTime, rampToFullStart), bgEndTime);
+          if (rampToFullEnd > rampToFullStart + 0.01) {
+            bgGain.gain.linearRampToValueAtTime(bgVolume, rampToFullEnd);
+          } else {
+            bgGain.gain.setValueAtTime(bgVolume, rampToFullEnd);
+          }
+
+          // Hold for 8 seconds
           bgGain.gain.setValueAtTime(bgVolume, fullVolumeEndTime);
           
           // Phase 3: Fade down over 3s back to low volume
