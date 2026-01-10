@@ -645,20 +645,23 @@ export class AudioMixer {
         endOffset
       });
 
-      // Set up gain envelope
+      // Set up gain envelope: full volume for 8 seconds, then fade out
+      const fullVolumeDuration = 8; // Play at full volume for 8 seconds
       bgGain.gain.setValueAtTime(0, 0);
-      bgGain.gain.setValueAtTime(0, bgActualStart);
-      bgGain.gain.linearRampToValueAtTime(bgVolume, bgActualStart + actualFadeIn);
-
-      const holdTime = bgEndTime - actualFadeOut;
-      if (holdTime > bgActualStart + actualFadeIn) {
-        bgGain.gain.setValueAtTime(bgVolume, holdTime);
+      // Start immediately at full volume (no fade-in)
+      bgGain.gain.setValueAtTime(bgVolume, bgActualStart);
+      
+      // Hold at full volume for 8 seconds
+      const fullVolumeEnd = Math.min(bgActualStart + fullVolumeDuration, bgEndTime - actualFadeOut);
+      if (fullVolumeEnd > bgActualStart) {
+        bgGain.gain.setValueAtTime(bgVolume, fullVolumeEnd);
       }
-      bgGain.gain.linearRampToValueAtTime(0, bgEndTime);
+      // Then fade out
+      bgGain.gain.linearRampToValueAtTime(0, fullVolumeEnd + actualFadeOut);
 
       // Start and stop the background music
       bgSource.start(bgActualStart);
-      bgSource.stop(bgEndTime);
+      bgSource.stop(fullVolumeEnd + actualFadeOut);
       
     } catch (error) {
       console.error('[AudioMixer] Failed to add background music:', error);
@@ -723,22 +726,22 @@ export class AudioMixer {
   }
 
   /**
-   * Find the position (in seconds from speech start) of the first long break tag (>= 8s).
+   * Find the position (in seconds from speech start) of the first 10s break tag.
    * Used for auto-detecting when to start background music.
    */
   private findFirstLongBreakPosition(text: string, speechBuffer?: AudioBuffer): number | null {
-    // Look for break tags with time >= 8 seconds (typically the trivia break is 10s)
+    // Look for break tags with exactly 10 seconds
     const breakPattern = /<break\s+time=["'](\d+(?:\.\d+)?)(ms|s)["']\s*\/?\s*>/gi;
     const breakMatches = [...text.matchAll(breakPattern)];
     
-    // Find first break that's >= 8 seconds
+    // Find first break that's exactly 10 seconds
     let targetBreakIndex = -1;
     let targetBreakDuration = 0;
     for (let i = 0; i < breakMatches.length; i++) {
       const value = parseFloat(breakMatches[i][1]);
       const unit = breakMatches[i][2];
       const durationSec = unit === 'ms' ? value / 1000 : value;
-      if (durationSec >= 8) {
+      if (durationSec === 10) {
         targetBreakIndex = i;
         targetBreakDuration = durationSec;
         break;
