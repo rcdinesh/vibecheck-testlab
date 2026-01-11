@@ -74,7 +74,7 @@ const VoiceControls = ({
     breakSoundUrl: countdownTimer,
     // Background music defaults
     bgMusicEnabled: false,
-    bgMusicVolume: 0.15,
+    bgMusicVolume: 0.05,
     bgMusicStartTime: -1, // -1 means auto-detect from <break time="10s"/>
     bgMusicEndTime: 10, // before outro
     bgMusicFadeIn: 2,
@@ -568,16 +568,16 @@ const VoiceControls = ({
                 {musicConfig.bgMusicEnabled && bgMusicUrl && (
                   <>
                     <div className="flex items-center gap-3 mt-3">
-                      <span className="text-sm text-muted-foreground w-20">Volume:</span>
+                      <span className="text-sm text-muted-foreground w-20">Bed Volume:</span>
                       <Slider
-                        value={[musicConfig.bgMusicVolume ?? 0.08]}
+                        value={[musicConfig.bgMusicVolume ?? 0.05]}
                         onValueChange={(value) => setMusicConfig(prev => ({ ...prev, bgMusicVolume: value[0] }))}
                         min={0.01}
-                        max={0.3}
+                        max={0.15}
                         step={0.01}
                         className="flex-1"
                       />
-                      <span className="text-sm font-medium text-voice-secondary w-12">{Math.round((musicConfig.bgMusicVolume ?? 0.08) * 100)}%</span>
+                      <span className="text-sm font-medium text-voice-secondary w-12">{Math.round((musicConfig.bgMusicVolume ?? 0.05) * 100)}%</span>
                     </div>
                     
                     <div className="flex items-center gap-3 mt-2">
@@ -644,7 +644,7 @@ const VoiceControls = ({
                   <> • Music outro: fades in last {musicConfig.outroFadeInDuration}s of speech → plays {musicConfig.outroDuration}s after speech ends (fade out last {musicConfig.outroFadeOutDuration}s)</>
                 )}
                 {musicConfig.bgMusicEnabled && bgMusicUrl && (
-                  <> • Background music: plays during speech at {Math.round((musicConfig.bgMusicVolume ?? 0.08) * 100)}% volume</>
+                  <> • Background music: 100% at break → {Math.round((musicConfig.bgMusicVolume ?? 0.05) * 100)}% bed</>
                 )}
               </div>
             </div>
