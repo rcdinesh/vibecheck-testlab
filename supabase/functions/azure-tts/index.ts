@@ -74,16 +74,34 @@ async function synthesizeChunk(
   // Fix plain <break> tags
   const fixedText = text.replace(/<break\s*\/?>/gi, '<break time="3s"/>');
 
-  const ssml = `
-    <speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xmlns:mstts="https://www.w3.org/2001/mstts" xml:lang="en-US">
-      <voice name="${voice}">
-        <mstts:express-as style="${azureEmotion}">
-          <prosody rate="${rateStr}" pitch="${pitchStr}" volume="${Math.round(volume * 100)}%">
-            ${fixedText}
-          </prosody>
-        </mstts:express-as>
-      </voice>
-    </speak>`.trim();
+  // Check if user is providing their own voice tags in the script
+  const isCustomVoiceMode = voice === "__custom_in_script__" || !voice;
+  
+  let ssml: string;
+  
+  if (isCustomVoiceMode) {
+    // Multi-voice mode: don't wrap in outer <voice>, let inline tags handle it
+    ssml = `
+      <speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xmlns:mstts="https://www.w3.org/2001/mstts" xml:lang="en-US">
+        <prosody rate="${rateStr}" pitch="${pitchStr}" volume="${Math.round(volume * 100)}%">
+          ${fixedText}
+        </prosody>
+      </speak>`.trim();
+  } else {
+    // Single-voice mode: wrap in user-selected voice
+    ssml = `
+      <speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xmlns:mstts="https://www.w3.org/2001/mstts" xml:lang="en-US">
+        <voice name="${voice}">
+          <mstts:express-as style="${azureEmotion}">
+            <prosody rate="${rateStr}" pitch="${pitchStr}" volume="${Math.round(volume * 100)}%">
+              ${fixedText}
+            </prosody>
+          </mstts:express-as>
+        </voice>
+      </speak>`.trim();
+  }
+  
+  console.log('SSML mode:', isCustomVoiceMode ? 'custom-voice-in-script' : 'single-voice');
 
   const ttsResponse = await fetch(`https://${azureRegion}.tts.speech.microsoft.com/cognitiveservices/v1`, {
     method: 'POST',
