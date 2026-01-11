@@ -23,6 +23,7 @@ interface MusicConfig {
   bgMusicVolume?: number;    // 0-1, default low (0.1)
   bgMusicFadeIn?: number;    // fade in duration
   bgMusicFadeOut?: number;   // fade out duration
+  bgMusicDuckOnBreaks?: boolean; // duck (mute) bg music during trivia breaks (4s breaks)
 }
 
 interface AudioMixerOptions {
@@ -673,6 +674,11 @@ export class AudioMixer {
           }
           bgGain.gain.linearRampToValueAtTime(0.0001, bgEndTime);
 
+          // Apply ducking for 4s breaks (trivia questions)
+          if (config.bgMusicDuckOnBreaks !== false && originalText) {
+            this.applyDuckingForBreaks(bgGain, originalText, speechStartTime, speechBuffer);
+          }
+
           bgSource.start(bgActualStart);
           bgSource.stop(bgEndTime);
           return;
@@ -746,6 +752,11 @@ export class AudioMixer {
         bgGain.gain.setValueAtTime(bgVolume, holdTime);
       }
       bgGain.gain.linearRampToValueAtTime(0.0001, bgEndTime);
+
+      // Apply ducking for 4s breaks (trivia questions) in manual/fallback mode too
+      if (config.bgMusicDuckOnBreaks !== false && originalText) {
+        this.applyDuckingForBreaks(bgGain, originalText, speechStartTime, speechBuffer);
+      }
 
       // Start and stop the background music
       bgSource.start(bgActualStart);
@@ -1053,6 +1064,58 @@ export class AudioMixer {
 
     console.log('[AudioMixer] Detected silence segments:', merged);
     return merged;
+  }
+
+  /**
+   * Apply volume ducking (fade to 0) during 4-second trivia breaks.
+   * Uses 0.3s fade transitions to avoid audio clicks.
+   */
+  private applyDuckingForBreaks(
+    bgGain: GainNode,
+    originalText: string,
+    speechStartTime: number,
+    speechBuffer?: AudioBuffer
+  ): void {
+    // Get all 4s break positions using the existing parseBreakTimings method
+    const breakTimings = this.parseBreakTimings(originalText, speechBuffer);
+    
+    if (breakTimings.length === 0) {
+      return;
+    }
+
+    const fadeTime = 0.3; // Quick fade to avoid clicks
+    
+    console.log('[AudioMixer] Applying ducking for breaks:', breakTimings);
+
+    for (const breakTiming of breakTimings) {
+      // Only duck for 4-second breaks (trivia/yes-no questions)
+      if (breakTiming.duration !== 4) continue;
+      
+      const breakStart = speechStartTime + breakTiming.position;
+      const breakEnd = breakStart + breakTiming.duration;
+      
+      // Calculate duck envelope times
+      const duckFadeStart = Math.max(0, breakStart - fadeTime);
+      const duckFadeEnd = breakEnd + fadeTime;
+      
+      // Get the current gain value at this point (approximated - the envelope is complex)
+      // We use cancelAndHoldAtTime where supported, otherwise just override
+      // For simplicity, we fade to a very low value (0.001) rather than absolute 0
+      
+      // Duck down before the break
+      bgGain.gain.setValueAtTime(bgGain.gain.value, duckFadeStart);
+      bgGain.gain.linearRampToValueAtTime(0.001, breakStart);
+      
+      // Hold at near-zero during break
+      bgGain.gain.setValueAtTime(0.001, breakEnd);
+      
+      // Fade back up after break - restore to a reasonable bed volume
+      // Note: This will override other envelope points, but for trivia breaks
+      // we want the music to clearly duck and return
+      bgGain.gain.linearRampToValueAtTime(0.05, duckFadeEnd); // Restore to bed volume
+      
+      console.log(`[AudioMixer] Ducking scheduled: fade ${duckFadeStart.toFixed(2)}s → mute ${breakStart.toFixed(2)}s → unmute ${breakEnd.toFixed(2)}s → restore ${duckFadeEnd.toFixed(2)}s`);
+    }
   }
 
   isSupported(): boolean {
