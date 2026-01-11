@@ -80,12 +80,11 @@ async function synthesizeChunk(
   let ssml: string;
   
   if (isCustomVoiceMode) {
-    // Multi-voice mode: don't wrap in outer <voice>, let inline tags handle it
+    // Multi-voice mode: no wrapper - voice tags must be direct children of <speak>
+    // Prosody cannot wrap voice tags in Azure SSML
     ssml = `
       <speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xmlns:mstts="https://www.w3.org/2001/mstts" xml:lang="en-US">
-        <prosody rate="${rateStr}" pitch="${pitchStr}" volume="${Math.round(volume * 100)}%">
-          ${fixedText}
-        </prosody>
+        ${fixedText}
       </speak>`.trim();
   } else {
     // Single-voice mode: wrap in user-selected voice
