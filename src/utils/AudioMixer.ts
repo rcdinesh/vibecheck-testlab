@@ -591,15 +591,15 @@ export class AudioMixer {
       if (autoFromBreak && originalText) {
         const breakStart = this.findFirstLongBreakPosition(originalText, speechBuffer);
         if (breakStart !== null) {
-          const leadInSeconds = 3; // start 3s before the break
+        const leadInSeconds = 3; // start 3s before the break
           const leadInTarget = 0.025; // ~2–3% absolute gain
-          const bedTarget = 0.08; // 8% absolute gain
+          const peakVolume = 1.0; // Always 100% at break, regardless of slider
           const fullVolumeDuration = 8; // Full volume for 8s starting at break
           const fadeDownDuration = 3; // Fade down over 3s back to bed
 
-          // Keep the curve sane even if the user sets bgVolume below our targets.
-          const leadInVolume = Math.min(leadInTarget, bgVolume);
-          const bedVolume = Math.min(bedTarget, bgVolume);
+          // Lead-in is always 2.5%, bed volume is controlled by slider (default 5%)
+          const leadInVolume = leadInTarget;
+          const bedVolume = bgVolume; // Slider now controls bed volume
 
           // Calculate timeline positions
           const cueStartOffset = Math.max(0, breakStart - leadInSeconds);
@@ -648,17 +648,17 @@ export class AudioMixer {
           bgGain.gain.setValueAtTime(0, Math.max(0, tStart - rampIn));
           bgGain.gain.linearRampToValueAtTime(leadInVolume, Math.min(tStart + rampIn, bgEndTime));
 
-          // Phase 2: ramp over the full 3s lead-in up to 100% (bgVolume) at the break
+          // Phase 2: ramp over the full 3s lead-in up to 100% at the break
           if (tBreak > tStart + rampIn + 0.01) {
-            bgGain.gain.linearRampToValueAtTime(bgVolume, tBreak);
+            bgGain.gain.linearRampToValueAtTime(peakVolume, tBreak);
           } else {
-            bgGain.gain.setValueAtTime(bgVolume, tBreak);
+            bgGain.gain.setValueAtTime(peakVolume, tBreak);
           }
 
-          // Hold full volume for 8 seconds
-          bgGain.gain.setValueAtTime(bgVolume, tFullEnd);
+          // Hold full volume (100%) for 8 seconds
+          bgGain.gain.setValueAtTime(peakVolume, tFullEnd);
 
-          // Phase 3: fade down over 3 seconds to the 8% bed
+          // Phase 3: fade down over 3 seconds to the bed volume (slider-controlled)
           if (tFadeEnd > tFullEnd + 0.01) {
             bgGain.gain.linearRampToValueAtTime(bedVolume, tFadeEnd);
           } else {
