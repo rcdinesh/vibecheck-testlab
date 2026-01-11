@@ -78,7 +78,8 @@ const VoiceControls = ({
     bgMusicStartTime: -1, // -1 means auto-detect from <break time="10s"/>
     bgMusicEndTime: 10, // before outro
     bgMusicFadeIn: 2,
-    bgMusicFadeOut: 2
+    bgMusicFadeOut: 2,
+    bgMusicDuckOnBreaks: true // mute bg music during 4s trivia breaks
   });
   const [audioMixer] = useState(() => {
     const mixer = new AudioMixer({
@@ -630,6 +631,15 @@ const VoiceControls = ({
                         className="flex-1"
                       />
                       <span className="text-sm font-medium text-voice-secondary w-12">{musicConfig.bgMusicFadeIn ?? 2}s</span>
+                    </div>
+                    
+                    <div className="flex items-center gap-3 mt-2">
+                      <span className="text-sm text-muted-foreground w-20">Duck on Trivia:</span>
+                      <Switch
+                        checked={musicConfig.bgMusicDuckOnBreaks ?? true}
+                        onCheckedChange={(bgMusicDuckOnBreaks) => setMusicConfig(prev => ({ ...prev, bgMusicDuckOnBreaks }))}
+                      />
+                      <span className="text-xs text-muted-foreground">Mute music during 4s breaks</span>
                     </div>
                   </>
                 )}
