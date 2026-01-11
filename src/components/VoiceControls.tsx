@@ -652,21 +652,29 @@ const VoiceControls = ({
         </div>
 
         {/* Voice Selection */}
-        <div className="flex items-center gap-3 p-3 bg-background/50 rounded-lg border border-border/30">
-          <Volume2 className="w-4 h-4 text-voice-primary" />
-          <span className="text-sm text-muted-foreground">Voice:</span>
-          <Select value={selectedVoice} onValueChange={setSelectedVoice}>
-            <SelectTrigger className="flex-1 bg-background border-border/50">
-              <SelectValue placeholder="Select voice..." />
-            </SelectTrigger>
-            <SelectContent>
-              {availableVoices.map((voice) => (
-                <SelectItem key={voice.name} value={voice.name}>
-                  {voice.displayName || voice.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+        <div className="space-y-1">
+          <div className="flex items-center gap-3 p-3 bg-background/50 rounded-lg border border-border/30">
+            <Volume2 className="w-4 h-4 text-voice-primary" />
+            <span className="text-sm text-muted-foreground">Voice:</span>
+            <Select value={selectedVoice} onValueChange={setSelectedVoice}>
+              <SelectTrigger className="flex-1 bg-background border-border/50">
+                <SelectValue placeholder="Select voice..." />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__custom_in_script__">Custom Voice in Script</SelectItem>
+                {availableVoices.map((voice) => (
+                  <SelectItem key={voice.name} value={voice.name}>
+                    {voice.displayName || voice.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          {selectedVoice === "__custom_in_script__" && (
+            <p className="text-xs text-muted-foreground px-3">
+              Use &lt;voice name="..."&gt; tags in your script to specify speakers.
+            </p>
+          )}
         </div>
 
         {/* Speech Rate Selection */}
